@@ -4,8 +4,7 @@ import uuid
 import random
 from datetime import datetime
 
-from ai_core.inference.mock_detector import mock_detect
-# LATER: from ai_core.inference.yolo_detector import yolo_detect
+from ai_core.inference.mock_detector import mock_detect# LATER: from ai_core.inference.yolo_detector import yolo_detect
 
 from backend.services.severity_engine    import SeverityEngine
 from backend.services.root_cause_engine  import RootCauseEngine
