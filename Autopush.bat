@@ -1,11 +1,14 @@
 @echo off
 
-cd /d C:\Users\tham\amis
+cd /d "E:\Amis"
 
 git add .
 
-git commit -m "Auto backup %date% %time%"
-
-git push origin main
+git diff --cached --quiet && (
+    echo No changes to commit.
+) || (
+    git commit -m "Auto backup %date% %time%"
+    git push origin main
+)
 
 pause
