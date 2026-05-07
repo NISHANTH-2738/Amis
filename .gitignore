@@ -10,3 +10,4 @@ ai-core/data/augmented/
 uploads/
 heatmaps/
 .vscode/settings.json
+.vscode/
