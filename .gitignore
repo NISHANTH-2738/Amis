@@ -11,3 +11,5 @@ uploads/
 heatmaps/
 .vscode/settings.json
 .vscode/
+datasets/
+weights/
