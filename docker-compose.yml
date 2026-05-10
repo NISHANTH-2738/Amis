@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: amis_postgres
+    environment:
+      POSTGRES_USER: amis_user
+      POSTGRES_PASSWORD: amis_pass
+      POSTGRES_DB: amis_db
+      TZ: Asia/Kolkata   # ✅ correct way
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: amis_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

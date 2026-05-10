@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FabriGuard — Dashboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0;}
+  :root{
+    --fg:#0f1117;--fg2:#3d4354;--fg3:#8890a4;
+    --bg:#f5f6fa;--bg2:#ffffff;--bg3:#ecedf2;
+    --red:#d93025;--red-bg:#fdf1f0;
+    --amber:#c97a00;--amber-bg:#3d351f;
+    --green:#1a7f4b;--green-bg:#edf7f1;
+    --blue:#1a5fb4;--blue-bg:#edf3fc;
+    --border:#e2e4ec;
+    --font-display:'Syne',sans-serif;
+    --font-mono:'IBM Plex Mono',monospace;
+  }
+  @media(prefers-color-scheme:dark){
+    :root{
+      --fg:#e8eaf2;--fg2:#a8afc4;--fg3:#5a6178;
+      --bg:#0f1117;--bg2:#181c26;--bg3:#1e2333;
+      --red:#f28b82;--red-bg:#2a1a1a;
+      --amber:#ffd966;--amber-bg:#2a2210;
+      --green:#5fcf8a;--green-bg:#0f2318;
+      --blue:#78b4f8;--blue-bg:#0e1e35;
+      --border:#272d3f;
+    }
+  }
+  html,body{height:100%;}
+  body{background:var(--bg);font-family:var(--font-display);color:var(--fg);font-size:14px;}
+  .shell{display:grid;grid-template-rows:52px 1fr;height:100vh;}
+  .topbar{background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:16px;}
+  .logo{font-size:16px;font-weight:700;letter-spacing:-0.5px;color:var(--fg);}
+  .logo span{color:var(--blue);}
+  .topbar-tabs{display:flex;gap:2px;margin-left:12px;}
+  .tab{padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;color:var(--fg3);border:none;background:transparent;font-family:var(--font-display);}
+  .tab.active{background:var(--bg3);color:var(--fg);}
+  .live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+  .live-label{font-size:12px;color:var(--green);font-weight:500;font-family:var(--font-mono);}
+  .time-label{font-size:12px;color:var(--fg3);font-family:var(--font-mono);}
+  .main{overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px;}
+  .metrics-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+  .metric-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;}
+  .metric-label{font-size:11px;font-weight:500;color:var(--fg3);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:8px;}
+  .metric-val{font-size:26px;font-weight:700;line-height:1;font-family:var(--font-mono);}
+  .metric-sub{font-size:11px;color:var(--fg3);margin-top:6px;}
+  .metric-card.danger .metric-val{color:var(--red);}
+  .metric-card.warn .metric-val{color:var(--amber);}
+  .metric-card.good .metric-val{color:var(--green);}
+  .metric-card.info .metric-val{color:var(--blue);}
+  .row2{display:grid;grid-template-columns:1fr 340px;gap:16px;}
+  .panel{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+  .panel-head{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+  .panel-title{font-size:13px;font-weight:600;color:var(--fg);}
+  .panel-body{padding:16px;}
+  .chart-wrap{position:relative;width:100%;height:180px;}
+  .feed{display:flex;flex-direction:column;gap:0;}
+  .feed-item{display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;}
+  .feed-item:last-child{border-bottom:none;}
+  .feed-item:hover{background:var(--bg3);}
+  .sev-dot{width:8px;height:8px;border-radius:50%;margin-top:4px;flex-shrink:0;}
+  .sev-dot.l1{background:#94a3b8;}
+  .sev-dot.l2{background:var(--amber);}
+  .sev-dot.l3{background:var(--red);}
+  .sev-dot.l4{background:#7c3aed;}
+  .feed-defect{font-size:13px;font-weight:500;color:var(--fg);}
+  .feed-meta{font-size:11px;color:var(--fg3);margin-top:2px;font-family:var(--font-mono);}
+  .feed-badge{margin-left:auto;font-size:10px;font-weight:600;padding:3px 8px;border-radius:4px;font-family:var(--font-mono);flex-shrink:0;}
+  .badge-l1{background:var(--bg3);color:var(--fg3);}
+  .badge-l2{background:var(--amber-bg);color:var(--amber);}
+  .badge-l3{background:var(--red-bg);color:var(--red);}
+  .badge-l4{background:#f3e8ff;color:#7c3aed;}
+  .row3{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .defect-list{display:flex;flex-direction:column;gap:8px;}
+  .defect-row{display:flex;align-items:center;gap:10px;}
+  .defect-name{font-size:12px;color:var(--fg2);width:110px;flex-shrink:0;}
+  .defect-bar-wrap{flex:1;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;}
+  .defect-bar{height:100%;border-radius:3px;}
+  .defect-count{font-size:11px;color:var(--fg3);font-family:var(--font-mono);width:30px;text-align:right;}
+  .machine-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+  .machine-card{background:var(--bg3);border-radius:8px;padding:10px 12px;}
+  .machine-id{font-size:11px;font-weight:600;color:var(--fg3);font-family:var(--font-mono);}
+  .machine-status{font-size:12px;font-weight:500;margin-top:4px;}
+  .machine-rate{font-size:11px;color:var(--fg3);margin-top:2px;}
+  .status-ok{color:var(--green);}
+  .status-warn{color:var(--amber);}
+  .status-err{color:var(--red);}
+  .view{display:none;}
+  .view.active{display:contents;}
+  .eng-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .rc-item{padding:12px 16px;border-bottom:1px solid var(--border);}
+  .rc-item:last-child{border-bottom:none;}
+  .rc-title{font-size:13px;font-weight:500;color:var(--fg);}
+  .rc-detail{font-size:12px;color:var(--fg3);margin-top:3px;font-family:var(--font-mono);}
+  .rc-action{font-size:11px;color:var(--blue);margin-top:4px;font-weight:500;}
+  .insp-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;display:flex;gap:16px;align-items:flex-start;}
+  .defect-thumb{width:80px;height:80px;border-radius:8px;background:var(--bg3);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;}
+  .defect-info{flex:1;}
+  .defect-type{font-size:15px;font-weight:600;color:var(--fg);}
+  .defect-attrs{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;}
+  .attr-tag{font-size:11px;padding:3px 8px;border-radius:4px;background:var(--bg3);color:var(--fg2);font-family:var(--font-mono);}
+  .insp-actions{display:flex;gap:8px;margin-top:10px;}
+  .btn{padding:6px 14px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--bg3);color:var(--fg);font-family:var(--font-display);}
+  .btn.primary{background:var(--blue);color:#fff;border-color:var(--blue);}
+  .btn.danger{background:var(--red);color:#fff;border-color:var(--red);}
+</style>
+</head>
+<body>
+  <div style="
+    background:#111;
+    color:#fff;
+    padding:10px;
+    text-align:center;
+    font-size:12px;
+">
+⚠ Legacy Dashboard — Not in use
+</div>
+<div id="stats"></div>
+<div class="shell">
+  <div class="topbar">
+    <div class="logo">Fabri<span>Guard</span></div>
+    <div class="topbar-tabs">
+      <button class="tab active" onclick="switchView('supervisor',this)">Supervisor</button>
+      <button class="tab" onclick="switchView('inspector',this)">Inspector</button>
+      <button class="tab" onclick="switchView('engineer',this)">Engineer</button>
+    </div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+      <div class="live-dot"></div>
+      <span class="live-label">LIVE</span>
+      <span class="time-label" id="clock">--:--:--</span>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- SUPERVISOR VIEW -->
+    <div class="view active" id="view-supervisor">
+      <div class="metrics-row">
+        <div class="metric-card good">
+          <div class="metric-label">inspected today</div>
+          <div class="metric-val" id="m-inspected">2,847</div>
+          <div class="metric-sub">+124 last hour</div>
+        </div>
+        <div class="metric-card danger">
+          <div class="metric-label">defects detected</div>
+          <div class="metric-val" id="m-defects">38</div>
+          <div class="metric-sub">1.33% defect rate</div>
+        </div>
+        <div class="metric-card warn">
+          <div class="metric-label">active alerts</div>
+          <div class="metric-val" id="m-alerts">3</div>
+          <div class="metric-sub">2 pending review</div>
+        </div>
+        <div class="metric-card info">
+          <div class="metric-label">model accuracy</div>
+          <div class="metric-val">91.4%</div>
+          <div class="metric-sub">mAP50 on validation</div>
+        </div>
+      </div>
+      <div class="row2">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="panel-title">defect rate — last 12 hours</span>
+            <span style="font-size:11px;color:var(--fg3);font-family:var(--font-mono);">per 100 units</span>
+          </div>
+          <div class="panel-body">
+            <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span class="panel-title">live defect feed</span></div>
+          <div class="feed" id="live-feed"></div>
+        </div>
+      </div>
+      <div class="row3">
+        <div class="panel">
+          <div class="panel-head"><span class="panel-title">defect distribution</span></div>
+          <div class="panel-body"><div class="defect-list" id="defect-dist"></div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span class="panel-title">machine status</span></div>
+          <div class="panel-body"><div class="machine-grid" id="machine-grid"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- INSPECTOR VIEW -->
+    <div class="view" id="view-inspector">
+      <div class="metrics-row">
+        <div class="metric-card info"><div class="metric-label">my queue</div><div class="metric-val">7</div><div class="metric-sub">pending review</div></div>
+        <div class="metric-card good"><div class="metric-label">cleared today</div><div class="metric-val">142</div><div class="metric-sub">last: 2 min ago</div></div>
+        <div class="metric-card warn"><div class="metric-label">overrides made</div><div class="metric-val">4</div><div class="metric-sub">fed back to model</div></div>
+        <div class="metric-card good"><div class="metric-label">agreement rate</div><div class="metric-val">96%</div><div class="metric-sub">with AI decisions</div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px;" id="inspector-cards"></div>
+    </div>
+
+    <!-- ENGINEER VIEW -->
+    <div class="view" id="view-engineer">
+      <div class="metrics-row">
+        <div class="metric-card danger"><div class="metric-label">root causes found</div><div class="metric-val">5</div><div class="metric-sub">this shift</div></div>
+        <div class="metric-card warn"><div class="metric-label">machines flagged</div><div class="metric-val">2</div><div class="metric-sub">need attention</div></div>
+        <div class="metric-card info"><div class="metric-label">sensor anomalies</div><div class="metric-val">11</div><div class="metric-sub">isolation forest</div></div>
+        <div class="metric-card good"><div class="metric-label">actions resolved</div><div class="metric-val">8</div><div class="metric-sub">today</div></div>
+      </div>
+      <div class="eng-grid">
+        <div class="panel">
+          <div class="panel-head"><span class="panel-title">root cause log</span></div>
+          <div id="rc-log"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span class="panel-title">sensor anomaly chart</span></div>
+          <div class="panel-body">
+            <div class="chart-wrap"><canvas id="sensorChart"></canvas></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const defectTypes  = ['Drop stitch','Hole','Needle line','Run / Ladder','Stain','Pilling','Tuck fault','Fly yarn'];
+const defectCounts = [12,8,6,5,3,2,1,1];
+const defectColors = ['#d93025','#c97a00','#1a5fb4','#7c3aed','#d93025','#c97a00','#1a5fb4','#7c3aed'];
+const machines = [
+  {id:'M-01',status:'ok',  label:'Running',  rate:'2.1%'},
+  {id:'M-02',status:'warn',label:'High vib.',rate:'4.8%'},
+  {id:'M-03',status:'ok',  label:'Running',  rate:'1.2%'},
+  {id:'M-04',status:'err', label:'Tool worn',rate:'8.3%'},
+  {id:'M-05',status:'ok',  label:'Running',  rate:'0.9%'},
+  {id:'M-06',status:'ok',  label:'Running',  rate:'1.7%'},
+];
+const feedData = [
+  {defect:'Needle line', meta:'M-04 · Line 3 · 09:42',sev:'l3',badge:'ISOLATE'},
+  {defect:'Drop stitch', meta:'M-02 · Line 1 · 09:41',sev:'l2',badge:'ALERT'},
+  {defect:'Hole',        meta:'M-04 · Line 3 · 09:39',sev:'l3',badge:'ISOLATE'},
+  {defect:'Fly yarn',    meta:'M-01 · Line 2 · 09:38',sev:'l1',badge:'MONITOR'},
+  {defect:'Run / Ladder',meta:'M-04 · Line 3 · 09:35',sev:'l4',badge:'STOP'},
+];
+const rcData = [
+  {title:'Worn needle — M-04',       detail:'Tool age 8 days · exceeded 7-day limit',         action:'Replace needle immediately'},
+  {title:'High vibration — M-02',    detail:'Vibration 2.1× normal · warp tension drift',     action:'Schedule maintenance end of shift'},
+  {title:'Humidity spike 09:30',     detail:'68% RH detected · thread elasticity affected',   action:'Activate dehumidifier in Zone 3'},
+  {title:'Yarn tension drift — M-04',detail:'4.8kN vs baseline 4.2kN',                        action:'Recalibrate tension sensor'},
+  {title:'Batch B-2291 material',    detail:'12 defects from same yarn batch',                action:'Flag supplier — request QC report'},
+];
+const inspCards = [
+  {defect:'Needle line', machine:'M-04',conf:'94%',sevLabel:'High',   loc:'Centre-left', tc:'#fdf1f0',ta:'#d93025'},
+  {defect:'Hole',        machine:'M-04',conf:'89%',sevLabel:'High',   loc:'Edge region', tc:'#fdf1f0',ta:'#d93025'},
+  {defect:'Drop stitch', machine:'M-02',conf:'77%',sevLabel:'Medium', loc:'Centre',      tc:'#fdf6e3',ta:'#c97a00'},
+];
+
+function buildDefectDist(){
+  const el=document.getElementById('defect-dist');
+  const max=Math.max(...defectCounts);
+  defectTypes.forEach((name,i)=>{
+    const pct=Math.round((defectCounts[i]/max)*100);
+    el.innerHTML+=`<div class="defect-row">
+      <span class="defect-name">${name}</span>
+      <div class="defect-bar-wrap"><div class="defect-bar" style="width:${pct}%;background:${defectColors[i]};"></div></div>
+      <span class="defect-count">${defectCounts[i]}</span>
+    </div>`;
+  });
+}
+function buildMachines(){
+  const el=document.getElementById('machine-grid');
+  machines.forEach(m=>{
+    el.innerHTML+=`<div class="machine-card">
+      <div class="machine-id">${m.id}</div>
+      <div class="machine-status status-${m.status}">${m.label}</div>
+      <div class="machine-rate">Defect rate: ${m.rate}</div>
+    </div>`;
+  });
+}
+function buildFeed(){
+  const el=document.getElementById('live-feed');
+  feedData.forEach(f=>{
+    el.innerHTML+=`<div class="feed-item">
+      <div class="sev-dot ${f.sev}"></div>
+      <div><div class="feed-defect">${f.defect}</div><div class="feed-meta">${f.meta}</div></div>
+      <span class="feed-badge badge-${f.sev}">${f.badge}</span>
+    </div>`;
+  });
+}
+function buildInspectorCards(){
+  const el=document.getElementById('inspector-cards');
+  inspCards.forEach(c=>{
+    el.innerHTML+=`<div class="insp-card">
+      <div class="defect-thumb" style="background:${c.tc};">
+        <svg width="40" height="40" viewBox="0 0 40 40">
+          <rect x="5" y="5" width="30" height="30" rx="4" fill="${c.tc}" stroke="${c.ta}" stroke-width="1.5"/>
+          <line x1="5" y1="20" x2="35" y2="20" stroke="${c.ta}" stroke-width="1.5" stroke-dasharray="3,2"/>
+          <circle cx="20" cy="20" r="5" fill="${c.ta}" opacity="0.7"/>
+        </svg>
+      </div>
+      <div class="defect-info">
+        <div class="defect-type">${c.defect}</div>
+        <div class="defect-attrs">
+          <span class="attr-tag">${c.machine}</span>
+          <span class="attr-tag">conf ${c.conf}</span>
+          <span class="attr-tag">${c.sevLabel}</span>
+          <span class="attr-tag">${c.loc}</span>
+        </div>
+        <div class="insp-actions">
+          <button class="btn primary">Confirm defect</button>
+          <button class="btn">Override — pass</button>
+          <button class="btn danger">Escalate</button>
+        </div>
+      </div>
+    </div>`;
+  });
+}
+function buildRCLog(){
+  const el=document.getElementById('rc-log');
+  rcData.forEach(r=>{
+    el.innerHTML+=`<div class="rc-item">
+      <div class="rc-title">${r.title}</div>
+      <div class="rc-detail">${r.detail}</div>
+      <div class="rc-action">${r.action}</div>
+    </div>`;
+  });
+}
+function buildTrendChart(){
+  const labels=['21:00','22:00','23:00','00:00','01:00','02:00','03:00','04:00','05:00','06:00','07:00','08:00','09:00'];
+  const data=  [1.1,0.9,1.3,0.8,1.0,1.2,0.7,0.9,1.1,2.1,3.4,5.8,8.3];
+  const isDark=matchMedia('(prefers-color-scheme:dark)').matches;
+  new Chart(document.getElementById('trendChart'),{
+    type:'line',
+    data:{labels,datasets:[{label:'Defect rate',data,borderColor:'#d93025',borderWidth:2,
+      pointRadius:3,pointBackgroundColor:'#d93025',fill:true,
+      backgroundColor:isDark?'rgba(217,48,37,0.08)':'rgba(217,48,37,0.06)',tension:0.4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:isDark?'#5a6178':'#8890a4',font:{size:10}},grid:{color:isDark?'rgba(255,255,255,0.05)':'rgba(0,0,0,0.05)'}},
+        y:{ticks:{color:isDark?'#5a6178':'#8890a4',font:{size:10}},grid:{color:isDark?'rgba(255,255,255,0.05)':'rgba(0,0,0,0.05)'},min:0}
+      }}
+  });
+}
+function buildSensorChart(){
+  const labels=Array.from({length:20},(_,i)=>`9:${String(i*2).padStart(2,'0')}`);
+  const vibration=[1.0,1.0,1.1,1.0,1.2,1.0,1.1,1.3,1.8,2.1,1.9,2.2,1.8,2.0,2.1,1.9,2.3,2.1,2.0,2.2];
+  const tension=  [4.2,4.2,4.2,4.3,4.2,4.2,4.3,4.4,4.5,4.6,4.7,4.8,4.7,4.8,4.8,4.9,4.8,4.9,4.8,4.9];
+  const isDark=matchMedia('(prefers-color-scheme:dark)').matches;
+  new Chart(document.getElementById('sensorChart'),{
+    type:'line',
+    data:{labels,datasets:[
+      {label:'Vibration',data:vibration,borderColor:'#d93025',borderWidth:1.5,pointRadius:2,tension:0.3,fill:false},
+      {label:'Tension',  data:tension,  borderColor:'#c97a00',borderWidth:1.5,pointRadius:2,tension:0.3,fill:false,yAxisID:'y2'}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:isDark?'#5a6178':'#8890a4',font:{size:9},maxTicksLimit:8},grid:{color:isDark?'rgba(255,255,255,0.05)':'rgba(0,0,0,0.05)'}},
+        y:{ticks:{color:'#d93025',font:{size:9}},grid:{color:isDark?'rgba(255,255,255,0.05)':'rgba(0,0,0,0.05)'},min:0.8,max:2.6},
+        y2:{position:'right',ticks:{color:'#c97a00',font:{size:9}},grid:{display:false},min:4.0,max:5.2}
+      }}
+  });
+}
+function switchView(name,btn){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+}
+function updateClock(){
+  document.getElementById('clock').textContent=new Date().toTimeString().slice(0,8);
+}
+let dc=38,ic=2847;
+function liveUpdate(){
+  if(Math.random()<0.3){
+    dc++;ic+=Math.floor(Math.random()*3)+1;
+    document.getElementById('m-defects').textContent=dc;
+    document.getElementById('m-inspected').textContent=ic.toLocaleString();
+  }
+}
+const CONFIG = {
+MODE: "Live", // change to "live" later
+API_BASE: null, // not used in this mockup, but can be set to backend URL for real data fetching
+WS_URL: null // not used in this mockup, but can be set to backend WebSocket URL for real-time updates"
+};
+
+class DataProvider {
+constructor(config) {
+this.mode = config.MODE;
+this.ws = null;
+}
+
+start() {
+    if (this.mode === "mock") {
+        console.log("MOCK MODE");
+    } else {
+        this.startLive();
+    }
+
+    this.loadStats();
+}
+
+startLive() {
+    this.ws = new WebSocket(CONFIG.WS_URL);
+
+    this.ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "inspection") {
+            this.handleInspection(data);
+        }
+
+        if (data.type === "anomaly") {
+            this.handleAnomaly(data);
+        }
+    };
+}
+
+handleInspection(d) {
+// update metrics
+const inspectedEl = document.getElementById("m-inspected");
+const defectsEl = document.getElementById("m-defects");
+
+let inspected = parseInt(inspectedEl.textContent.replace(/,/g, ""));
+let defects = parseInt(defectsEl.textContent);
+
+inspected += 1;
+if (d.status === "FAIL") defects += 1;
+
+inspectedEl.textContent = inspected.toLocaleString();
+defectsEl.textContent = defects;
+
+// add to feed
+const feed = document.getElementById("live-feed");
+
+const sevMap = {
+    PASS: "l1",
+    MONITOR: "l1",
+    ALERT: "l2",
+    ISOLATE: "l3",
+    STOP: "l4"
+};
+
+const sev = sevMap[d.decision] || "l1";
+
+const item = document.createElement("div");
+item.className = "feed-item";
+
+item.innerHTML = `
+    <div class="sev-dot ${sev}"></div>
+    <div>
+        <div class="feed-defect">${d.defect_type || "-"}</div>
+        <div class="feed-meta">${d.machine_id} · ${new Date().toLocaleTimeString()}</div>
+    </div>
+    <span class="feed-badge badge-${sev}">
+        ${d.decision}
+    </span>
+`;
+
+feed.prepend(item);
+
+// limit feed size
+if (feed.children.length > 20) {
+    feed.removeChild(feed.lastChild);
+}
+
+}
+handleAnomaly(d) {
+const alertsEl = document.getElementById("m-alerts");
+
+let alerts = parseInt(alertsEl.textContent);
+alerts += 1;
+alertsEl.textContent = alerts;
+
+const feed = document.getElementById("live-feed");
+
+const item = document.createElement("div");
+item.className = "feed-item";
+
+item.innerHTML = `
+    <div class="sev-dot l3"></div>
+    <div>
+        <div class="feed-defect">⚠️ Anomaly (${d.machine_id})</div>
+        <div class="feed-meta">${d.recommendation}</div>
+    </div>
+    <span class="feed-badge badge-l3">ANOMALY</span>
+`;
+
+feed.prepend(item);
+
+}
+
+async loadStats() {
+    if (this.mode === "mock") {
+        UI.updateStats({
+            inspected: 2847,
+            defects: 38,
+            alerts: 3,
+            defect_rate: 1.33
+        });
+        return;
+    }
+
+    try {
+        const res = await fetch(`${CONFIG.API_BASE}/dashboard/stats`);
+        const data = await res.json();
+        UI.updateStats(data);
+    } catch (err) {
+        console.error("Stats error", err);
+    }
+}
+}
+
+buildDefectDist();
+buildMachines();
+buildFeed();
+buildInspectorCards();
+buildRCLog();
+setTimeout(()=>{buildTrendChart();buildSensorChart();},100);
+updateClock();
+setInterval(updateClock,1000);
+if (CONFIG.MODE === "mock") {
+    setInterval(liveUpdate, 3000);
+}
+const provider = new DataProvider(CONFIG);
+provider.start();
+
+// auto refresh stats
+setInterval(() => provider.loadStats(), 5000);
+UI.updateStats = function (data) {
+    const div = document.getElementById("stats");
+
+    div.innerHTML = `
+        <div class="card">
+            📊 Inspected: ${data.inspected}
+            | Defects: ${data.defects}
+            | Alerts: ${data.alerts}
+            | Rate: ${data.defect_rate}%
+        </div>
+    `;
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+redis
+requests
+pillow
+numpy
+scikit-learn
+torch
+torchvision
+opencv-python

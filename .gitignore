@@ -1,0 +1,26 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
+
+# AI / ML files
+*.pt
+*.pth
+runs/
+dataset/
+uploads/
+yolov5/
+
+# Frontend
+node_modules/
+dist/
+build/
+
+# Archives
+*.zip
+*.rar
+*.7z
