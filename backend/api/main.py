@@ -2,7 +2,7 @@ import sys, os
 sys.path.append(os.path.dirname(
     os.path.dirname(os.path.dirname(__file__))
 ))
-
+from ai_core.inference.isolation_forest_detector import detector
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
