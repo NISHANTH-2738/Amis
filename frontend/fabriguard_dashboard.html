@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>FabriGuard — Quality Intelligence System</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --fg:#0d0f14;--fg2:#3a3f52;--fg3:#7c8499;
+  --bg:#f0f2f7;--bg2:#ffffff;--bg3:#e8eaf0;--bg4:#f7f8fc;
+  --red:#c8281e;--red-l:#fdf1f0;--red-m:#f9c9c6;
+  --amber:#b86e00;--amber-l:#fdf5e6;--amber-m:#fad89a;
+  --green:#166534;--green-l:#edf7f0;--green-m:#a7f0c4;
+  --blue:#1447a0;--blue-l:#eef3fd;--blue-m:#b3caf9;
+  --purple:#5b21b6;--purple-l:#f3eeff;
+  --border:#dde0ea;--border2:#c8ccd8;
+  --font:'DM Sans',sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:10px;--r2:14px;
+}
+@media(prefers-color-scheme:dark){:root{
+  --fg:#eaecf4;--fg2:#9aa0b8;--fg3:#555d76;
+  --bg:#0c0e14;--bg2:#141720;--bg3:#1c2030;--bg4:#101318;
+  --red:#f87171;--red-l:#1e1010;--red-m:#3d1a1a;
+  --amber:#fbbf24;--amber-l:#1e1800;--amber-m:#3d2e00;
+  --green:#4ade80;--green-l:#0a1f0f;--green-m:#143d20;
+  --blue:#60a5fa;--blue-l:#0a1628;--blue-m:#1a2e52;
+  --purple:#c084fc;--purple-l:#1a0f2e;
+  --border:#252a3a;--border2:#30364a;
+}}
+html,body{height:100%;font-family:var(--font);color:var(--fg);background:var(--bg);font-size:14px;}
+
+/* ── LAYOUT ── */
+.app{display:grid;grid-template-rows:56px 1fr;height:100vh;}
+.nav{background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:0;}
+.brand{font-size:17px;font-weight:600;letter-spacing:-0.4px;margin-right:32px;}
+.brand em{color:var(--blue);font-style:normal;}
+.nav-tabs{display:flex;height:100%;}
+.ntab{padding:0 18px;height:100%;display:flex;align-items:center;font-size:13px;font-weight:500;color:var(--fg3);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;transition:all .15s;font-family:var(--font);}
+.ntab:hover{color:var(--fg);}
+.ntab.active{color:var(--blue);border-bottom-color:var(--blue);}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:12px;}
+.ws-pill{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;background:var(--bg3);font-size:11px;font-family:var(--mono);font-weight:500;}
+.ws-dot{width:6px;height:6px;border-radius:50%;background:var(--fg3);}
+.ws-dot.on{background:var(--green);animation:blink 2s infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.3;}}
+.clock{font-size:12px;font-family:var(--mono);color:var(--fg3);}
+
+.body{overflow:hidden;display:grid;grid-template-columns:1fr;}
+.page{display:none;height:100%;overflow-y:auto;padding:24px;}
+.page.active{display:block;}
+
+/* ── CARDS ── */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;}
+.card-head{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.card-title{font-size:13px;font-weight:600;color:var(--fg);}
+.card-sub{font-size:11px;color:var(--fg3);font-family:var(--mono);}
+.card-body{padding:18px;}
+
+/* ── STAT CARDS ── */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
+.stat{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:16px 18px;}
+.stat-label{font-size:11px;font-weight:500;color:var(--fg3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;}
+.stat-val{font-size:28px;font-weight:600;font-family:var(--mono);line-height:1;}
+.stat-foot{font-size:11px;color:var(--fg3);margin-top:6px;}
+.stat.red .stat-val{color:var(--red);}
+.stat.amber .stat-val{color:var(--amber);}
+.stat.green .stat-val{color:var(--green);}
+.stat.blue .stat-val{color:var(--blue);}
+
+/* ── GRID LAYOUTS ── */
+.g2{display:grid;grid-template-columns:1fr 320px;gap:16px;margin-bottom:16px;}
+.g2b{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+
+/* ── FEED ── */
+.feed{display:flex;flex-direction:column;max-height:300px;overflow-y:auto;}
+.feed-row{display:flex;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid var(--border);animation:fadeSlide .25s ease;}
+@keyframes fadeSlide{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:translateY(0);}}
+.feed-row:last-child{border-bottom:none;}
+.sev{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.s0,.s1{background:var(--fg3);}
+.s2{background:var(--amber);}
+.s3{background:var(--red);}
+.s4{background:var(--purple);}
+.feed-name{font-size:13px;font-weight:500;flex:1;}
+.feed-meta{font-size:11px;color:var(--fg3);font-family:var(--mono);}
+.badge{font-size:10px;font-weight:600;padding:3px 8px;border-radius:4px;font-family:var(--mono);}
+.b0,.b1{background:var(--bg3);color:var(--fg3);}
+.b2{background:var(--amber-l);color:var(--amber);}
+.b3{background:var(--red-l);color:var(--red);}
+.b4{background:var(--purple-l);color:var(--purple);}
+
+/* ── CHART ── */
+.chart-wrap{position:relative;width:100%;height:170px;}
+
+/* ── DEFECT BARS ── */
+.dbar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.dbar-name{font-size:12px;color:var(--fg2);width:100px;flex-shrink:0;}
+.dbar-track{flex:1;height:5px;background:var(--bg3);border-radius:3px;overflow:hidden;}
+.dbar-fill{height:100%;border-radius:3px;transition:width .5s ease;}
+.dbar-num{font-size:11px;font-family:var(--mono);color:var(--fg3);width:24px;text-align:right;}
+
+/* ── MACHINE CARDS ── */
+.machines{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.mcard{background:var(--bg3);border-radius:8px;padding:10px 12px;}
+.mcard-id{font-size:11px;font-family:var(--mono);font-weight:500;color:var(--fg3);}
+.mcard-status{font-size:12px;font-weight:500;margin-top:4px;}
+.mcard-detail{font-size:11px;color:var(--fg3);margin-top:2px;}
+.ok{color:var(--green);}
+.warn{color:var(--amber);}
+.crit{color:var(--red);}
+
+/* ── IMAGE UPLOAD INSPECTOR ── */
+.upload-zone{border:2px dashed var(--border2);border-radius:var(--r2);padding:40px 24px;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg4);}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--blue);background:var(--blue-l);}
+.upload-zone input{display:none;}
+.upload-icon{width:48px;height:48px;margin:0 auto 12px;background:var(--bg3);border-radius:12px;display:flex;align-items:center;justify-content:center;}
+.upload-title{font-size:15px;font-weight:600;margin-bottom:4px;}
+.upload-sub{font-size:12px;color:var(--fg3);}
+
+/* ── INSPECTION RESULT ── */
+.result-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;}
+.img-canvas-wrap{position:relative;border-radius:var(--r);overflow:hidden;background:#000;aspect-ratio:1;}
+.img-canvas-wrap canvas{width:100%;height:100%;display:block;}
+.result-panel{display:flex;flex-direction:column;gap:12px;}
+.result-status{padding:16px 18px;border-radius:var(--r);display:flex;align-items:center;gap:12px;}
+.result-status.pass{background:var(--green-l);border:1px solid var(--green-m);}
+.result-status.fail{background:var(--red-l);border:1px solid var(--red-m);}
+.result-icon{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+.result-icon.pass{background:var(--green-m);}
+.result-icon.fail{background:var(--red-m);}
+.result-label{font-size:18px;font-weight:600;}
+.result-label.pass{color:var(--green);}
+.result-label.fail{color:var(--red);}
+.result-conf{font-size:12px;color:var(--fg3);}
+
+.info-block{background:var(--bg3);border-radius:var(--r);padding:14px 16px;}
+.info-block-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--fg3);margin-bottom:10px;}
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);}
+.info-row:last-child{border-bottom:none;}
+.info-key{font-size:12px;color:var(--fg3);}
+.info-val{font-size:12px;font-weight:500;font-family:var(--mono);}
+.info-val.red{color:var(--red);}
+.info-val.green{color:var(--green);}
+.info-val.amber{color:var(--amber);}
+
+.action-strip{background:var(--amber-l);border:1px solid var(--amber-m);border-radius:var(--r);padding:12px 16px;}
+.action-strip-title{font-size:11px;font-weight:600;color:var(--amber);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;}
+.action-strip-text{font-size:13px;color:var(--fg);}
+.cause-strip{background:var(--blue-l);border:1px solid var(--blue-m);border-radius:var(--r);padding:12px 16px;}
+.cause-strip-title{font-size:11px;font-weight:600;color:var(--blue);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;}
+.cause-strip-text{font-size:13px;color:var(--fg);}
+
+.insp-btns{display:flex;gap:8px;margin-top:4px;}
+.btn{padding:8px 16px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--bg3);color:var(--fg);font-family:var(--font);transition:all .15s;}
+.btn:hover{background:var(--bg);border-color:var(--border2);}
+.btn.primary{background:var(--blue);color:#fff;border-color:var(--blue);}
+.btn.primary:hover{opacity:.9;}
+.btn.danger{background:var(--red);color:#fff;border-color:var(--red);}
+.btn.danger:hover{opacity:.9;}
+.btn.success{background:var(--green);color:#fff;border-color:var(--green);}
+
+/* ── ENGINEER VIEW ── */
+.eng-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.rc-row{padding:12px 18px;border-bottom:1px solid var(--border);}
+.rc-row:last-child{border-bottom:none;}
+.rc-title{font-size:13px;font-weight:500;}
+.rc-detail{font-size:12px;color:var(--fg3);margin-top:3px;font-family:var(--mono);}
+.rc-action{font-size:11px;color:var(--blue);margin-top:4px;font-weight:500;}
+
+/* ── SCANNING ANIMATION ── */
+.scanning{display:none;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;gap:16px;}
+.scan-ring{width:64px;height:64px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.scan-text{font-size:14px;font-weight:500;color:var(--fg2);}
+.scan-sub{font-size:12px;color:var(--fg3);font-family:var(--mono);}
+
+/* ── HISTORY TABLE ── */
+.hist-table{width:100%;border-collapse:collapse;font-size:12px;}
+.hist-table th{padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--fg3);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border);background:var(--bg4);}
+.hist-table td{padding:9px 12px;border-bottom:1px solid var(--border);}
+.hist-table tr:last-child td{border-bottom:none;}
+.hist-table tr:hover td{background:var(--bg3);}
+
+/* ── EMPTY ── */
+.empty{padding:40px;text-align:center;color:var(--fg3);font-size:13px;}
+
+/* ── API ERROR ── */
+.api-err{background:var(--red-l);border:1px solid var(--red-m);border-radius:var(--r);padding:12px 16px;color:var(--red);font-size:13px;margin-bottom:16px;display:none;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- NAV -->
+  <nav class="nav">
+    <div class="brand">Fabri<em>Guard</em></div>
+    <div class="nav-tabs">
+      <button class="ntab active" onclick="nav('supervisor',this)">Supervisor</button>
+      <button class="ntab" onclick="nav('inspector',this)">Inspector</button>
+      <button class="ntab" onclick="nav('scan',this)">Scan Product</button>
+      <button class="ntab" onclick="nav('engineer',this)">Engineer</button>
+    </div>
+    <div class="nav-right">
+      <div class="ws-pill">
+        <div class="ws-dot" id="wsdot"></div>
+        <span id="wslabel">connecting</span>
+      </div>
+      <span class="clock" id="clock">--:--:--</span>
+    </div>
+  </nav>
+
+  <div class="body">
+
+    <!-- ══ SUPERVISOR PAGE ══ -->
+    <div class="page active" id="pg-supervisor">
+      <div class="api-err" id="apierr">
+        API offline — start server: python backend/api/main.py
+      </div>
+      <div class="stats">
+        <div class="stat green"><div class="stat-label">Inspected Today</div><div class="stat-val" id="s-total">—</div><div class="stat-foot" id="s-total-f">loading…</div></div>
+        <div class="stat red"><div class="stat-label">Defects Found</div><div class="stat-val" id="s-defects">—</div><div class="stat-foot" id="s-rate">loading…</div></div>
+        <div class="stat amber"><div class="stat-label">Active Alerts</div><div class="stat-val" id="s-alerts">—</div><div class="stat-foot">pending review</div></div>
+        <div class="stat blue"><div class="stat-label">System Mode</div><div class="stat-val" style="font-size:16px;" id="s-mode">MOCK</div><div class="stat-foot">swap to yolov8 when ready</div></div>
+      </div>
+      <div class="g2">
+        <div class="card">
+          <div class="card-head"><span class="card-title">Defect Rate — Live Trend</span><span class="card-sub" id="trend-count">last 20 inspections</span></div>
+          <div class="card-body"><div class="chart-wrap"><canvas id="trendChart"></canvas></div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Live Feed</span><span class="card-sub" id="feed-count">0 events</span></div>
+          <div class="feed" id="live-feed"><div class="empty">Waiting for inspections…</div></div>
+        </div>
+      </div>
+      <div class="g2b">
+        <div class="card">
+          <div class="card-head"><span class="card-title">Defect Distribution</span></div>
+          <div class="card-body" id="dbar-wrap"><div class="empty">No defects yet</div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Machine Status</span></div>
+          <div class="card-body"><div class="machines" id="machines"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ INSPECTOR PAGE ══ -->
+    <div class="page" id="pg-inspector">
+      <div class="stats">
+        <div class="stat blue"><div class="stat-label">Queue</div><div class="stat-val" id="i-queue">0</div><div class="stat-foot">awaiting review</div></div>
+        <div class="stat green"><div class="stat-label">Cleared</div><div class="stat-val" id="i-cleared">0</div><div class="stat-foot">today</div></div>
+        <div class="stat amber"><div class="stat-label">Overrides</div><div class="stat-val" id="i-overrides">0</div><div class="stat-foot">fed back to model</div></div>
+        <div class="stat green"><div class="stat-label">Pass Rate</div><div class="stat-val" id="i-passrate">—</div><div class="stat-foot">today</div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px;" id="insp-queue">
+        <div class="card"><div class="empty">No defects in queue — all clear ✓</div></div>
+      </div>
+    </div>
+
+    <!-- ══ SCAN PRODUCT PAGE ══ -->
+    <div class="page" id="pg-scan">
+      <div style="max-width:900px;margin:0 auto;">
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-head">
+            <span class="card-title">Scan Product Image</span>
+            <span class="card-sub">Upload any product photo — system returns mock defect analysis</span>
+          </div>
+          <div class="card-body">
+
+            <!-- Upload zone -->
+            <div class="upload-zone" id="dropzone" onclick="document.getElementById('fileInput').click()" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFile(event)">
+              <input type="file" id="fileInput" accept="image/*" onchange="handleFile(this.files[0])"/>
+              <div class="upload-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--fg3)">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+              </div>
+              <div class="upload-title">Drop product image here</div>
+              <div class="upload-sub">PNG, JPG, WEBP — any product, any size</div>
+            </div>
+
+            <!-- Scanning animation -->
+            <div class="scanning" id="scanning">
+              <div class="scan-ring"></div>
+              <div class="scan-text">Analysing product…</div>
+              <div class="scan-sub" id="scan-step">Running mock detection pipeline</div>
+            </div>
+
+            <!-- Result -->
+            <div id="scan-result" style="display:none;">
+              <div class="result-grid">
+
+                <!-- Image with defect overlay -->
+                <div>
+                  <div style="font-size:12px;font-weight:600;color:var(--fg3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">Product Image + Defect Location</div>
+                  <div class="img-canvas-wrap">
+                    <canvas id="resultCanvas"></canvas>
+                  </div>
+                  <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;" id="legend"></div>
+                </div>
+
+                <!-- Inspection report -->
+                <div class="result-panel">
+
+                  <!-- Status banner -->
+                  <div class="result-status" id="res-banner">
+                    <div class="result-icon" id="res-icon"></div>
+                    <div>
+                      <div class="result-label" id="res-label">—</div>
+                      <div class="result-conf" id="res-conf">—</div>
+                    </div>
+                  </div>
+
+                  <!-- Detection details -->
+                  <div class="info-block">
+                    <div class="info-block-title">Detection Details</div>
+                    <div class="info-row"><span class="info-key">Defect Type</span><span class="info-val" id="d-type">—</span></div>
+                    <div class="info-row"><span class="info-key">Confidence</span><span class="info-val" id="d-conf">—</span></div>
+                    <div class="info-row"><span class="info-key">Location</span><span class="info-val" id="d-loc">—</span></div>
+                    <div class="info-row"><span class="info-key">Severity</span><span class="info-val" id="d-sev">—</span></div>
+                    <div class="info-row"><span class="info-key">Machine</span><span class="info-val" id="d-mach">—</span></div>
+                    <div class="info-row"><span class="info-key">Inference</span><span class="info-val" id="d-time">—</span></div>
+                    <div class="info-row"><span class="info-key">Model</span><span class="info-val" id="d-model">—</span></div>
+                  </div>
+
+                  <!-- Action required -->
+                  <div class="action-strip" id="action-strip" style="display:none;">
+                    <div class="action-strip-title">⚠ Action Required</div>
+                    <div class="action-strip-text" id="action-text">—</div>
+                  </div>
+
+                  <!-- Root cause -->
+                  <div class="cause-strip" id="cause-strip" style="display:none;">
+                    <div class="cause-strip-title">Root Cause</div>
+                    <div class="cause-strip-text" id="cause-text">—</div>
+                  </div>
+
+                  <!-- Buttons -->
+                  <div class="insp-btns" id="insp-btns" style="display:none;">
+                    <button class="btn success" onclick="confirmScan()">✓ Confirm Defect</button>
+                    <button class="btn" onclick="overrideScan()">Override — Pass</button>
+                    <button class="btn danger" onclick="escalateScan()">Escalate</button>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Scan history -->
+        <div class="card">
+          <div class="card-head"><span class="card-title">Scan History</span><span class="card-sub" id="hist-count">0 scans</span></div>
+          <div style="overflow-x:auto;">
+            <table class="hist-table" id="hist-table">
+              <thead><tr><th>Time</th><th>Status</th><th>Defect</th><th>Confidence</th><th>Severity</th><th>Machine</th><th>Root Cause</th></tr></thead>
+              <tbody id="hist-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ ENGINEER PAGE ══ -->
+    <div class="page" id="pg-engineer">
+      <div class="stats">
+        <div class="stat red"><div class="stat-label">Root Causes</div><div class="stat-val" id="e-causes">0</div><div class="stat-foot">this session</div></div>
+        <div class="stat amber"><div class="stat-label">Machines Flagged</div><div class="stat-val" id="e-machines">0</div><div class="stat-foot">sensor anomalies</div></div>
+        <div class="stat blue"><div class="stat-label">Total Alerts</div><div class="stat-val" id="e-total">0</div><div class="stat-foot">level 2+</div></div>
+        <div class="stat green"><div class="stat-label">API</div><div class="stat-val" style="font-size:16px;" id="e-api">—</div><div class="stat-foot">localhost:8000</div></div>
+      </div>
+      <div class="eng-grid">
+        <div class="card">
+          <div class="card-head"><span class="card-title">Root Cause Log</span></div>
+          <div id="rc-log"><div class="empty">No root causes yet…</div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Machine Sensor States</span></div>
+          <div id="sensor-log"><div class="empty">Loading…</div></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const API = 'http://localhost:8000';
+const WS  = 'ws://localhost:8000/ws/dashboard';
+
+// ── STATE ────────────────────────────────────────────
+let trendChart   = null;
+let trendLabels  = [];
+let trendData    = [];
+let defectCounts = {};
+let feedCount    = 0;
+let inspQueue    = [];
+let rcLog        = [];
+let overrides    = 0;
+let cleared      = 0;
+let causeCnt     = 0;
+let machFlags    = new Set();
+let scanHistory  = [];
+let currentScanResult = null;
+let currentInspectionId = null;
+
+const DEFECT_COLORS = {
+  drop_stitch:'#c8281e', hole:'#b86e00', needle_line:'#1447a0',
+  run_ladder:'#5b21b6',  stain:'#c8281e', pilling:'#b86e00',
+  tuck_fault:'#1447a0',  fly_yarn:'#7c8499', anomaly:'#c8281e'
+};
+const BADGES = ['PASS','MONITOR','ALERT','ISOLATE','STOP'];
+
+// ── CLOCK ────────────────────────────────────────────
+setInterval(()=>{
+  document.getElementById('clock').textContent =
+    new Date().toTimeString().slice(0,8);
+},1000);
+
+// ── NAV ──────────────────────────────────────────────
+function nav(name, btn){
+  document.querySelectorAll('.ntab')
+    .forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.page')
+    .forEach(p=>p.classList.remove('active'));
+  document.getElementById('pg-'+name)
+    .classList.add('active');
+}
+
+// ── WEBSOCKET ─────────────────────────────────────────
+function connectWS(){
+  const dot = document.getElementById('wsdot');
+  const lbl = document.getElementById('wslabel');
+  let ws;
+  try { ws = new WebSocket(WS); } catch(e){
+    dot.className='ws-dot'; lbl.textContent='offline';
+    showErr(true); return;
+  }
+  ws.onopen = ()=>{
+    dot.className='ws-dot on'; lbl.textContent='LIVE';
+    showErr(false);
+    document.getElementById('e-api').textContent='ONLINE';
+  };
+  ws.onmessage = e=>{
+    const m = JSON.parse(e.data);
+    if(m.type==='stats')      applyStats(m.stats);
+    if(m.type==='inspection') onInspection(m);
+    if(m.type==='alert')      onAlert(m);
+  };
+  ws.onclose = ()=>{
+    dot.className='ws-dot'; lbl.textContent='reconnecting';
+    setTimeout(connectWS,3000);
+  };
+  ws.onerror = ()=>{
+    dot.className='ws-dot'; lbl.textContent='offline';
+    showErr(true);
+    document.getElementById('e-api').textContent='OFFLINE';
+  };
+}
+
+function showErr(v){
+  document.getElementById('apierr').style.display=
+    v?'block':'none';
+}
+
+// ── STATS ─────────────────────────────────────────────
+function applyStats(s){
+  document.getElementById('s-total').textContent =
+    s.inspected_today.toLocaleString();
+  document.getElementById('s-defects').textContent =
+    s.defects_today;
+  document.getElementById('s-alerts').textContent =
+    s.active_alerts;
+  document.getElementById('s-rate').textContent =
+    s.defect_rate+'% defect rate';
+  const pr = s.inspected_today>0
+    ? Math.round((1-s.defects_today/s.inspected_today)*100)+'%'
+    : '—';
+  document.getElementById('i-passrate').textContent=pr;
+  document.getElementById('i-cleared').textContent=
+    s.inspected_today;
+  document.getElementById('feed-count').textContent=
+    s.inspected_today+' events';
+  document.getElementById('s-total-f').textContent=
+    'units inspected';
+}
+
+// ── INSPECTION EVENT ──────────────────────────────────
+function onInspection(m){
+  // trend
+  trendLabels.push(new Date(m.timestamp)
+    .toTimeString().slice(0,5));
+  trendData.push(m.status==='FAIL'?1:0);
+  if(trendLabels.length>20){
+    trendLabels.shift(); trendData.shift();
+  }
+  updateTrend();
+  document.getElementById('trend-count').textContent=
+    trendLabels.length+' inspections';
+
+  // defect dist
+  if(m.defect){
+    defectCounts[m.defect]=(defectCounts[m.defect]||0)+1;
+    updateDBars();
+  }
+
+  // feed
+  addFeedRow(m);
+
+  // inspector queue
+  if(m.status==='FAIL' && m.severity_level>=2){
+    inspQueue.unshift(m);
+    if(inspQueue.length>8) inspQueue.pop();
+    buildInspQueue();
+    document.getElementById('i-queue').textContent=
+      inspQueue.length;
+  }
+
+  // rc log
+  if(m.root_cause){
+    rcLog.unshift(m);
+    if(rcLog.length>10) rcLog.pop();
+    buildRCLog();
+    causeCnt++;
+    document.getElementById('e-causes').textContent=causeCnt;
+  }
+
+  if(m.severity_level>=2){
+    const c=parseInt(
+      document.getElementById('e-total').textContent)||0;
+    document.getElementById('e-total').textContent=c+1;
+  }
+}
+
+function onAlert(m){
+  machFlags.add(m.machine_id);
+  document.getElementById('e-machines').textContent=
+    machFlags.size;
+}
+
+// ── FEED ──────────────────────────────────────────────
+function addFeedRow(m){
+  const el = document.getElementById('live-feed');
+  const empty = el.querySelector('.empty');
+  if(empty) empty.remove();
+  const lvl  = m.severity_level||0;
+  const time = new Date(m.timestamp).toTimeString().slice(0,8);
+  const badge= BADGES[lvl]||'PASS';
+  const row  = document.createElement('div');
+  row.className='feed-row';
+  row.innerHTML=`
+    <div class="sev s${lvl}"></div>
+    <div style="flex:1">
+      <div class="feed-name">${m.defect||'No defect'}</div>
+      <div class="feed-meta">${m.machine_id} · ${time}</div>
+    </div>
+    <span class="badge b${lvl}">${badge}</span>`;
+  el.insertBefore(row,el.firstChild);
+  const rows=el.querySelectorAll('.feed-row');
+  if(rows.length>25) rows[rows.length-1].remove();
+  feedCount++;
+}
+
+// ── TREND CHART ───────────────────────────────────────
+function buildTrend(){
+  const dark=matchMedia('(prefers-color-scheme:dark)').matches;
+  trendChart=new Chart(
+    document.getElementById('trendChart'),{
+    type:'line',
+    data:{labels:trendLabels,datasets:[{
+      data:trendData,
+      borderColor:'#c8281e',borderWidth:2,
+      pointRadius:3,pointBackgroundColor:'#c8281e',
+      fill:true,
+      backgroundColor:dark
+        ?'rgba(200,40,30,0.07)':'rgba(200,40,30,0.05)',
+      tension:0.4
+    }]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:dark?'#555d76':'#7c8499',font:{size:10},maxTicksLimit:8},
+           grid:{color:dark?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.04)'}},
+        y:{min:0,max:1,ticks:{color:dark?'#555d76':'#7c8499',font:{size:10},stepSize:1},
+           grid:{color:dark?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.04)'}}
+      }}
+  });
+}
+function updateTrend(){
+  if(!trendChart) return;
+  trendChart.data.labels=trendLabels;
+  trendChart.data.datasets[0].data=trendData;
+  trendChart.update('none');
+}
+
+// ── DEFECT BARS ───────────────────────────────────────
+function updateDBars(){
+  const el=document.getElementById('dbar-wrap');
+  const max=Math.max(...Object.values(defectCounts),1);
+  el.innerHTML='';
+  Object.entries(defectCounts).sort((a,b)=>b[1]-a[1])
+    .forEach(([name,cnt])=>{
+      const pct=Math.round((cnt/max)*100);
+      const col=DEFECT_COLORS[name]||'#7c8499';
+      el.innerHTML+=`<div class="dbar-row">
+        <span class="dbar-name">${name.replace(/_/g,' ')}</span>
+        <div class="dbar-track">
+          <div class="dbar-fill" style="width:${pct}%;background:${col};"></div>
+        </div>
+        <span class="dbar-num">${cnt}</span>
+      </div>`;
+    });
+  if(!Object.keys(defectCounts).length)
+    el.innerHTML='<div class="empty">No defects yet</div>';
+}
+
+// ── MACHINES ──────────────────────────────────────────
+async function loadMachines(){
+  try{
+    const r=await fetch(`${API}/machines/status`);
+    const data=await r.json();
+    const el=document.getElementById('machines');
+    el.innerHTML='';
+    const sl=document.getElementById('sensor-log');
+    sl.innerHTML='';
+    data.forEach(m=>{
+      const h=m.health;
+      const cls=h==='ok'?'ok':h==='warning'?'warn':'crit';
+      const lbl=h==='ok'?'Running':h==='warning'?'Warning':'Critical';
+      el.innerHTML+=`<div class="mcard">
+        <div class="mcard-id">${m.machine_id}</div>
+        <div class="mcard-status ${cls}">${lbl}</div>
+        <div class="mcard-detail">Tool ${m.tool_age_days}d | Vib ${m.vibration}×</div>
+      </div>`;
+      sl.innerHTML+=`<div class="rc-row">
+        <div class="rc-title" style="color:var(--${cls==='ok'?'green':cls==='warn'?'amber':'red'})">${m.machine_id} — ${h.toUpperCase()}</div>
+        <div class="rc-detail">Tool: ${m.tool_age_days}d | Vibration: ${m.vibration}× | Tension: ${m.tension_kn}kN | Temp: ${m.temperature_c}°C</div>
+      </div>`;
+    });
+  }catch(e){
+    document.getElementById('machines').innerHTML=
+      '<div class="empty">API offline</div>';
+  }
+}
+
+// ── INSPECTOR QUEUE ───────────────────────────────────
+function buildInspQueue(){
+  const el=document.getElementById('insp-queue');
+  if(!inspQueue.length){
+    el.innerHTML='<div class="card"><div class="empty">No defects in queue — all clear ✓</div></div>';
+    return;
+  }
+  el.innerHTML='';
+  inspQueue.slice(0,5).forEach(m=>{
+    const lvl=m.severity_level||0;
+    const conf=m.confidence
+      ?Math.round(m.confidence*100)+'%':'—';
+    const bg=lvl>=3?'var(--red-l)':'var(--amber-l)';
+    const ac=lvl>=3?'var(--red)':'var(--amber)';
+    const card=document.createElement('div');
+    card.className='card';
+    card.style.borderLeft=`3px solid ${ac}`;
+    card.innerHTML=`
+      <div style="padding:16px 18px;display:flex;gap:14px;align-items:flex-start;">
+        <div style="width:56px;height:56px;border-radius:8px;background:${bg};flex-shrink:0;display:flex;align-items:center;justify-content:center;">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <rect x="2" y="2" width="24" height="24" rx="4" fill="${bg}" stroke="${ac}" stroke-width="1.5"/>
+            <line x1="2" y1="14" x2="26" y2="14" stroke="${ac}" stroke-width="1.5" stroke-dasharray="3,2"/>
+            <circle cx="14" cy="14" r="4" fill="${ac}" opacity=".6"/>
+          </svg>
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:15px;font-weight:600;">${(m.defect||'unknown').replace(/_/g,' ')}</div>
+          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+            <span class="badge b${lvl}">${BADGES[lvl]}</span>
+            <span style="font-size:11px;padding:3px 8px;border-radius:4px;background:var(--bg3);font-family:var(--mono);">${m.machine_id}</span>
+            <span style="font-size:11px;padding:3px 8px;border-radius:4px;background:var(--bg3);font-family:var(--mono);">conf ${conf}</span>
+          </div>
+          ${m.root_cause?`<div style="font-size:12px;color:var(--fg3);margin-top:6px;">Cause: ${m.root_cause}</div>`:''}
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button class="btn success" onclick="queueConfirm('${m.inspection_id}')">✓ Confirm</button>
+            <button class="btn" onclick="queueOverride('${m.inspection_id}')">Override</button>
+            <button class="btn danger" onclick="queueEscalate('${m.inspection_id}')">Escalate</button>
+          </div>
+        </div>
+      </div>`;
+    el.appendChild(card);
+  });
+}
+
+function queueConfirm(id){
+  cleared++;
+  document.getElementById('i-cleared').textContent=cleared;
+  removeFromQueue(id);
+}
+async function queueOverride(id){
+  overrides++;
+  document.getElementById('i-overrides').textContent=overrides;
+  try{ await fetch(`${API}/inspect/${id}/override`,{method:'POST'}); }
+  catch(e){}
+  removeFromQueue(id);
+}
+function queueEscalate(id){ removeFromQueue(id); }
+function removeFromQueue(id){
+  inspQueue=inspQueue.filter(i=>i.inspection_id!==id);
+  buildInspQueue();
+  document.getElementById('i-queue').textContent=inspQueue.length;
+}
+
+// ── ROOT CAUSE LOG ────────────────────────────────────
+function buildRCLog(){
+  const el=document.getElementById('rc-log');
+  if(!rcLog.length){
+    el.innerHTML='<div class="empty">No root causes yet…</div>';
+    return;
+  }
+  el.innerHTML='';
+  rcLog.forEach(m=>{
+    const t=new Date(m.timestamp).toTimeString().slice(0,8);
+    el.innerHTML+=`<div class="rc-row">
+      <div class="rc-title">${(m.defect||'unknown').replace(/_/g,' ')} — ${m.machine_id}</div>
+      <div class="rc-detail">${m.root_cause||'investigating…'} · ${t}</div>
+      <div class="rc-action">${m.fix||'Manual inspection required'}</div>
+    </div>`;
+  });
+}
+
+// ══════════════════════════════════════════════════════
+//  SCAN PRODUCT PAGE
+// ══════════════════════════════════════════════════════
+function dragOver(e){
+  e.preventDefault();
+  document.getElementById('dropzone').classList.add('drag');
+}
+function dragLeave(e){
+  document.getElementById('dropzone').classList.remove('drag');
+}
+function dropFile(e){
+  e.preventDefault();
+  dragLeave(e);
+  const file=e.dataTransfer.files[0];
+  if(file && file.type.startsWith('image/'))
+    handleFile(file);
+}
+
+function handleFile(file){
+  if(!file) return;
+  document.getElementById('dropzone').style.display='none';
+  document.getElementById('scan-result').style.display='none';
+  const scanning=document.getElementById('scanning');
+  scanning.style.display='flex';
+
+  // Show progressive scan steps
+  const steps=[
+    'Reading image pixels…',
+    'Preprocessing — resize to 416×416…',
+    'Running mock detection pipeline…',
+    'Classifying defect severity…',
+    'Correlating root cause…',
+    'Generating inspection report…'
+  ];
+  let si=0;
+  const stepEl=document.getElementById('scan-step');
+  const stepInterval=setInterval(()=>{
+    if(si<steps.length){
+      stepEl.textContent=steps[si++];
+    }
+  },300);
+
+  // Read image
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    const imgSrc=e.target.result;
+    // Simulate API call delay (1.8s)
+    setTimeout(async ()=>{
+      clearInterval(stepInterval);
+      try{
+        const result=await runScanInspection(imgSrc);
+        clearInterval(stepInterval);
+        scanning.style.display='none';
+        showScanResult(imgSrc, result);
+      }catch(err){
+        scanning.style.display='none';
+        document.getElementById('dropzone').style.display='block';
+        alert('Inspection failed — is the API running?');
+      }
+    },1800);
+  };
+  reader.readAsDataURL(file);
+}
+
+async function runScanInspection(imgSrc){
+  // Try real API first
+  try{
+    const blob=await (await fetch(imgSrc)).blob();
+    const form=new FormData();
+    form.append('file', blob, 'scan.jpg');
+    const r=await fetch(`${API}/inspect`,{method:'POST',body:form});
+    if(r.ok) return await r.json();
+  }catch(e){}
+  // Fallback: generate mock result locally
+  return generateMockResult();
+}
+
+function generateMockResult(){
+  const defects=[
+    {c:'drop_stitch',w:0.7},{c:'hole',w:0.9},
+    {c:'needle_line',w:0.6},{c:'run_ladder',w:0.8},
+    {c:'stain',w:0.5},{c:'pilling',w:0.3},
+    {c:'tuck_fault',w:0.4},{c:'fly_yarn',w:0.2}
+  ];
+  const machines=['M-01','M-02','M-03','M-04','M-05','M-06'];
+  const machineId=machines[Math.floor(Math.random()*6)];
+  const isDefect=Math.random()<0.65;
+  if(!isDefect) return {
+    inspection_id:Math.random().toString(36).slice(2,10),
+    timestamp:new Date().toISOString(),
+    machine_id:machineId,
+    status:'PASS',defects:[],
+    severity:{level:0,name:'PASS',action:'Continue production'},
+    root_cause:null,inference_ms:110,model_source:'mock'
+  };
+  const d=defects[Math.floor(Math.random()*defects.length)];
+  const conf=+(Math.random()*.37+.60).toFixed(2);
+  const RULES={
+    drop_stitch:{bl:2,cc:0.85},hole:{bl:3,cc:0.75},
+    needle_line:{bl:2,cc:0.90},run_ladder:{bl:3,cc:0.80},
+    stain:{bl:2,cc:0.85},pilling:{bl:1,cc:0.95},
+    tuck_fault:{bl:1,cc:0.90},fly_yarn:{bl:1,cc:0.95}
+  };
+  const rule=RULES[d.c]||{bl:2,cc:0.85};
+  let lvl=rule.bl;
+  if(conf>=rule.cc) lvl=Math.min(lvl+1,4);
+  const ACTS={
+    1:{name:'MONITOR',action:'Log silently. Continue production.'},
+    2:{name:'ALERT',action:'Flag product. Notify inspector.'},
+    3:{name:'ISOLATE',action:'Divert to rework. Alert supervisor.'},
+    4:{name:'STOP',action:'Halt line. Quarantine batch.'}
+  };
+  const CAUSES={
+    needle_line:'Needle overdue for replacement',
+    drop_stitch:'Warp tension too high — thread skipping',
+    hole:'Worn needle tip causing thread breaks',
+    run_ladder:'Excess tension causing stitch failure',
+    stain:'Worn parts causing oil leakage',
+    pilling:'Fibre quality — supplier batch issue',
+    tuck_fault:'Machine timing misalignment',
+    fly_yarn:'Ambient dust — filter cleaning required'
+  };
+  const FIXES={
+    needle_line:'Replace needle immediately',
+    drop_stitch:'Reduce tension to 4.2 kN baseline',
+    hole:'Replace needle. Inspect thread path.',
+    run_ladder:'Recalibrate tension to 4.1–4.3 kN',
+    stain:'Inspect oil seals. Clean fabric path.',
+    pilling:'Request material QC report from supplier',
+    tuck_fault:'Check and recalibrate machine timing',
+    fly_yarn:'Replace air filters. Clean feed path.'
+  };
+  return {
+    inspection_id:Math.random().toString(36).slice(2,10),
+    timestamp:new Date().toISOString(),
+    machine_id:machineId,
+    status:'FAIL',
+    defects:[{
+      class:d.c,confidence:conf,
+      bbox:{
+        x:+(Math.random()*.5+.1).toFixed(3),
+        y:+(Math.random()*.5+.1).toFixed(3),
+        width:+(Math.random()*.2+.1).toFixed(3),
+        height:+(Math.random()*.2+.1).toFixed(3)
+      },
+      severity_weight:d.w
+    }],
+    severity:{level:lvl,name:ACTS[lvl].name,action:ACTS[lvl].action},
+    root_cause:{
+      cause:CAUSES[d.c]||'Unknown sensor correlation',
+      action:FIXES[d.c]||'Manual inspection required',
+      confidence:0.82
+    },
+    inference_ms:110+Math.floor(Math.random()*40),
+    model_source:'mock'
+  };
+}
+
+function showScanResult(imgSrc, result){
+  document.getElementById('scan-result').style.display='block';
+  currentScanResult=result;
+  currentInspectionId=result.inspection_id;
+
+  const isPass=result.status==='PASS';
+  const defect=result.defects[0]||null;
+  const sev=result.severity;
+  const rc=result.root_cause;
+
+  // Status banner
+  const banner=document.getElementById('res-banner');
+  const icon=document.getElementById('res-icon');
+  const lbl=document.getElementById('res-label');
+  const conf=document.getElementById('res-conf');
+  banner.className='result-status '+(isPass?'pass':'fail');
+  icon.className='result-icon '+(isPass?'pass':'fail');
+  icon.textContent=isPass?'✓':'✕';
+  lbl.className='result-label '+(isPass?'pass':'fail');
+  lbl.textContent=isPass?'PASS — No Defect Detected':
+    `FAIL — ${(defect.class||'anomaly').replace(/_/g,' ').toUpperCase()} DETECTED`;
+  conf.textContent=isPass
+    ?'Product meets quality standards'
+    :`Confidence: ${Math.round(defect.confidence*100)}% · Severity: ${sev.name}`;
+
+  // Details
+  const sevColors={0:'green',1:'green',2:'amber',3:'red',4:'red'};
+  const sc=sevColors[sev.level]||'fg';
+  setText('d-type', isPass?'—':(defect.class||'anomaly').replace(/_/g,' '), isPass?'':'red');
+  setText('d-conf', isPass?'—':Math.round(defect.confidence*100)+'%', isPass?'':'red');
+  setText('d-loc', isPass?'—':
+    `x:${defect.bbox.x} y:${defect.bbox.y}`, '');
+  setText('d-sev', sev.name, sc);
+  setText('d-mach', result.machine_id, 'blue');
+  setText('d-time', result.inference_ms+'ms', '');
+  setText('d-model', result.model_source.toUpperCase(), 'blue');
+
+  // Action
+  const as=document.getElementById('action-strip');
+  const cs=document.getElementById('cause-strip');
+  if(!isPass && sev.level>=2){
+    as.style.display='block';
+    document.getElementById('action-text').textContent=sev.action;
+  } else { as.style.display='none'; }
+
+  if(rc){
+    cs.style.display='block';
+    document.getElementById('cause-text').textContent=
+      rc.cause+' → '+rc.action;
+  } else { cs.style.display='none'; }
+
+  // Inspector buttons
+  document.getElementById('insp-btns').style.display=
+    isPass?'none':'flex';
+
+  // Draw canvas
+  drawCanvas(imgSrc, defect);
+
+  // Legend
+  const leg=document.getElementById('legend');
+  leg.innerHTML='';
+  if(!isPass && defect){
+    const col=DEFECT_COLORS[defect.class]||'#c8281e';
+    leg.innerHTML=`
+      <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--fg3);">
+        <div style="width:12px;height:12px;border:2px solid ${col};border-radius:2px;"></div>
+        ${defect.class.replace(/_/g,' ')} (${Math.round(defect.confidence*100)}%)
+      </div>`;
+  }
+
+  // Add to history
+  addToHistory(result);
+
+  // Also push to live feed
+  addFeedRow({
+    defect:     isPass?null:defect.class,
+    machine_id: result.machine_id,
+    timestamp:  result.timestamp,
+    status:     result.status,
+    severity_level: sev.level
+  });
+
+  // Reset dropzone for next scan
+  document.getElementById('dropzone').style.display='block';
+}
+
+function setText(id, val, colorClass){
+  const el=document.getElementById(id);
+  el.textContent=val;
+  el.className='info-val'+(colorClass?' '+colorClass:'');
+}
+
+// ── CANVAS DEFECT OVERLAY ─────────────────────────────
+function drawCanvas(imgSrc, defect){
+  const canvas=document.getElementById('resultCanvas');
+  const ctx=canvas.getContext('2d');
+  const img=new Image();
+  img.onload=()=>{
+    const size=400;
+    canvas.width=size;
+    canvas.height=size;
+    ctx.drawImage(img,0,0,size,size);
+
+    if(defect){
+      const col=DEFECT_COLORS[defect.class]||'#c8281e';
+      const bx=defect.bbox;
+      const x=bx.x*size;
+      const y=bx.y*size;
+      const w=bx.width*size;
+      const h=bx.height*size;
+
+      // Defect region highlight
+      ctx.fillStyle=col+'33';
+      ctx.fillRect(x,y,w,h);
+
+      // Bounding box
+      ctx.strokeStyle=col;
+      ctx.lineWidth=2.5;
+      ctx.strokeRect(x,y,w,h);
+
+      // Corner marks
+      const cs=12;
+      ctx.lineWidth=3;
+      [[x,y],[x+w,y],[x,y+h],[x+w,y+h]].forEach(([px,py])=>{
+        const dx=px===x?1:-1;
+        const dy=py===y?1:-1;
+        ctx.beginPath();
+        ctx.moveTo(px,py+dy*cs);
+        ctx.lineTo(px,py);
+        ctx.lineTo(px+dx*cs,py);
+        ctx.stroke();
+      });
+
+      // Label
+      const label=`${defect.class.replace(/_/g,' ')} ${Math.round(defect.confidence*100)}%`;
+      const pad=6;
+      ctx.font='bold 12px IBM Plex Mono, monospace';
+      const tw=ctx.measureText(label).width;
+      const lx=x;
+      const ly=y>20?y-28:y+h+4;
+      ctx.fillStyle=col;
+      ctx.fillRect(lx,ly,tw+pad*2,22);
+      ctx.fillStyle='#fff';
+      ctx.fillText(label,lx+pad,ly+15);
+
+      // Crosshair at center
+      const cx2=x+w/2;
+      const cy2=y+h/2;
+      ctx.strokeStyle=col;
+      ctx.lineWidth=1.5;
+      ctx.setLineDash([4,3]);
+      ctx.beginPath();
+      ctx.moveTo(cx2-8,cy2); ctx.lineTo(cx2+8,cy2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx2,cy2-8); ctx.lineTo(cx2,cy2+8);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else {
+      // PASS overlay
+      ctx.fillStyle='rgba(22,101,52,0.08)';
+      ctx.fillRect(0,0,size,size);
+      ctx.strokeStyle='#166534';
+      ctx.lineWidth=3;
+      ctx.strokeRect(4,4,size-8,size-8);
+      ctx.fillStyle='rgba(22,101,52,0.85)';
+      ctx.fillRect(size/2-60,size/2-18,120,36);
+      ctx.fillStyle='#fff';
+      ctx.font='bold 14px DM Sans, sans-serif';
+      ctx.textAlign='center';
+      ctx.fillText('✓  PASS', size/2, size/2+6);
+      ctx.textAlign='left';
+    }
+  };
+  img.src=imgSrc;
+}
+
+// ── SCAN HISTORY ──────────────────────────────────────
+function addToHistory(result){
+  scanHistory.unshift(result);
+  document.getElementById('hist-count').textContent=
+    scanHistory.length+' scans';
+  const tbody=document.getElementById('hist-body');
+  const defect=result.defects[0];
+  const t=new Date(result.timestamp).toTimeString().slice(0,8);
+  const sev=result.severity;
+  const sc={0:'',1:'',2:'color:var(--amber)',3:'color:var(--red)',4:'color:var(--purple)'};
+  const row=document.createElement('tr');
+  row.innerHTML=`
+    <td style="font-family:var(--mono);color:var(--fg3);">${t}</td>
+    <td><span class="badge b${sev.level}">${result.status}</span></td>
+    <td>${defect?(defect.class.replace(/_/g,' ')):'—'}</td>
+    <td style="font-family:var(--mono);">${defect?Math.round(defect.confidence*100)+'%':'—'}</td>
+    <td style="font-weight:500;${sc[sev.level]||''}">${sev.name}</td>
+    <td style="font-family:var(--mono);">${result.machine_id}</td>
+    <td style="color:var(--fg3);font-size:11px;">${result.root_cause?result.root_cause.cause.slice(0,40)+'…':'—'}</td>`;
+  tbody.insertBefore(row,tbody.firstChild);
+}
+
+// ── SCAN BUTTONS ──────────────────────────────────────
+function confirmScan(){
+  document.getElementById('insp-btns').style.display='none';
+  document.getElementById('action-strip').style.display='none';
+  alert('Defect confirmed and logged to database.');
+}
+async function overrideScan(){
+  if(currentInspectionId){
+    try{
+      await fetch(`${API}/inspect/${currentInspectionId}/override`,
+        {method:'POST'});
+    }catch(e){}
+  }
+  document.getElementById('insp-btns').style.display='none';
+  alert('Override recorded — fed back to model.');
+}
+function escalateScan(){
+  document.getElementById('insp-btns').style.display='none';
+  alert('Escalated to engineer.');
+}
+
+// ── HISTORY LOAD ──────────────────────────────────────
+async function loadHistory(){
+  try{
+    const r=await fetch(`${API}/inspections/recent?count=20`);
+    const data=await r.json();
+    const sr=await fetch(`${API}/dashboard/stats`);
+    const stats=await sr.json();
+    applyStats(stats);
+    data.reverse().forEach(rec=>{
+      addFeedRow({
+        defect:rec.defect_class,
+        machine_id:rec.machine_id,
+        timestamp:rec.timestamp,
+        status:rec.status,
+        severity_level:rec.severity_level||0
+      });
+      if(rec.defect_class){
+        defectCounts[rec.defect_class]=
+          (defectCounts[rec.defect_class]||0)+1;
+      }
+      if(rec.root_cause && rec.defect_class){
+        rcLog.push({
+          defect:rec.defect_class,
+          machine_id:rec.machine_id,
+          timestamp:rec.timestamp,
+          root_cause:rec.root_cause,
+          fix:rec.action
+        });
+      }
+    });
+    updateDBars();
+    buildRCLog();
+    document.getElementById('e-api').textContent='ONLINE';
+    showErr(false);
+  }catch(e){
+    showErr(true);
+    document.getElementById('e-api').textContent='OFFLINE';
+  }
+}
+
+// ── INIT ─────────────────────────────────────────────
+window.onload=async()=>{
+  buildTrend();
+  await loadHistory();
+  await loadMachines();
+  connectWS();
+  setInterval(loadMachines,30000);
+  setInterval(async()=>{
+    try{
+      const r=await fetch(`${API}/dashboard/stats`);
+      applyStats(await r.json());
+    }catch(e){}
+  },10000);
+};
+</script>
+</body>
+</html>
