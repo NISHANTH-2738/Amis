@@ -23,7 +23,7 @@ def save_inspection(result: dict):
             d            = result["defects"][0]
             defect_class = d["class"]
             confidence   = d["confidence"]
-            bbox         = json.dumps(d["bbox"])
+            bbox         = d.get("bbox")
 
         if result["root_cause"]:
             root_cause = result["root_cause"]["cause"]
@@ -61,12 +61,14 @@ def save_alert(result: dict):
 
     db = SessionLocal()
     try:
+        defect_class = result["defects"][0]["class"] if result.get("defects") else "sensor_anomaly"
+        confidence = result["defects"][0]["confidence"] if result.get("defects") else result["anomaly"].get("score")
         alert = Alert(
             inspection_id = result["inspection_id"],
             machine_id    = result["machine_id"],
             alert_level   = result["severity"]["level"],
             alert_name    = result["severity"]["name"],
-            defect_class  = result["defects"][0]["class"],
+            defect_class  = defect_class,
             message       = (
                 f"{result['severity']['action']} | "
                 f"Cause: {result['root_cause']['cause']}"
@@ -83,8 +85,8 @@ def save_alert(result: dict):
             "level":       result["severity"]["level"],
             "level_name":  result["severity"]["name"],
             "machine_id":  result["machine_id"],
-            "defect":      result["defects"][0]["class"],
-            "confidence":  result["defects"][0]["confidence"],
+            "defect":      defect_class,
+            "confidence":  confidence,
             "action":      result["severity"]["action"],
             "root_cause":  result["root_cause"]["cause"] if result["root_cause"] else None,
             "fix":         result["root_cause"]["action"] if result["root_cause"] else None,

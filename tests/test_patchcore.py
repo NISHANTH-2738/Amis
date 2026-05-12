@@ -1,4 +1,4 @@
-# tests/test_patchcore.py
+﻿# tests/test_patchcore.py
 import sys, os
 sys.path.append(os.path.dirname(
     os.path.dirname(__file__)
@@ -11,7 +11,7 @@ from ai_core.inference.patchcore_detector import (
 )
 
 print("=" * 55)
-print("  FABRIGUARD — PATCHCORE FEW-SHOT TEST")
+print("  FABRIGUARD â€” PATCHCORE FEW-SHOT TEST")
 print("=" * 55)
 
 detector = PatchCoreDetector()
@@ -24,7 +24,7 @@ os.makedirs("uploads/test_inspect",   exist_ok=True)
 print("\n[1] Generating synthetic reference images...")
 ref_paths = []
 for i in range(10):
-    # Simulate good product — uniform texture
+    # Simulate good product â€” uniform texture
     img_array = np.ones((224, 224, 3),
                         dtype=np.uint8) * 180
     noise = np.random.randint(
@@ -65,7 +65,7 @@ print("\n[4] Inspecting DEFECTIVE product (should FAIL)...")
 bad_img = np.ones(
     (224, 224, 3), dtype=np.uint8
 ) * 180
-# Add obvious defect — dark square region
+# Add obvious defect â€” dark square region
 bad_img[80:140, 80:140] = [20, 20, 20]
 bad_path = "uploads/test_inspect/defect_test.png"
 Image.fromarray(bad_img).save(bad_path)
@@ -79,10 +79,11 @@ if r2["defects"]:
           f"y={d['bbox']['y']}")
 
 print("\n" + "=" * 55)
-print(f"  GOOD image  → {r1['status']}")
-print(f"  DEFECT image → {r2['status']}")
+print(f"  GOOD image  -> {r1['status']}")
+print(f"  DEFECT image -> {r2['status']}")
 if r1["status"] == "PASS" and r2["status"] == "FAIL":
-    print("  ✅ PATCHCORE WORKING CORRECTLY")
+    print("  PATCHCORE WORKING CORRECTLY")
 else:
-    print("  ⚠️  Threshold may need adjustment")
+    print("  Threshold may need adjustment")
 print("=" * 55)
+

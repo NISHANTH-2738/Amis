@@ -3,6 +3,8 @@ sys.path.append(os.path.dirname(
     os.path.dirname(os.path.dirname(__file__))
 ))
 from ai_core.inference.isolation_forest_detector import detector
+from ai_core.inference.patchcore_detector import patchcore
+from ai_core.inference.yolo_detector import model_status, reload_model
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -22,9 +24,7 @@ from backend.database.connection           import (
 from backend.database.models               import (
     Inspection, Alert
 )
-#from ai_core.inference.isolation_forest_detector import detector
-#from ai_core.inference.patchcore_detector        import patchcore
-from ai_core.inference.mock_detector import *
+METRICS_PATH = "ai_core/models/fabriguard_v1/metrics_report.json"
 
 # ── APP SETUP ────────────────────────────────────────
 app = FastAPI(
@@ -109,6 +109,8 @@ async def inspect(file: UploadFile = File(None)):
             f.write(await file.read())
 
     result = run_inspection(image_path)
+    save_inspection(result)
+    save_alert(result)
 
     # Broadcast inspection to dashboard
     await manager.broadcast({
@@ -133,17 +135,48 @@ async def inspect(file: UploadFile = File(None)):
 
     # Fire alert broadcast for level 2+
     if result["severity"]["level"] >= 2:
+        defect_name = result["defects"][0]["class"] if result["defects"] else "sensor_anomaly"
         await manager.broadcast({
             "type":       "alert",
             "level":      result["severity"]["level"],
             "level_name": result["severity"]["name"],
             "machine_id": result["machine_id"],
-            "defect":     result["defects"][0]["class"],
+            "defect":     defect_name,
             "action":     result["severity"]["action"],
             "cause":      result["root_cause"]["cause"]
                           if result["root_cause"] else None,
         })
 
+    return result
+
+@app.post("/inspect/frame")
+async def inspect_frame(file: UploadFile = File(...)):
+    """
+    Single-frame camera/image inference endpoint.
+    Uses the same hybrid YOLOv5n + PatchCore + Isolation Forest pipeline.
+    """
+    os.makedirs("uploads/frame", exist_ok=True)
+    safe_name = file.filename.replace(" ", "_")
+    image_path = f"uploads/frame/{uuid.uuid4()}_{safe_name}"
+    with open(image_path, "wb") as f:
+        f.write(await file.read())
+
+    result = run_inspection(image_path)
+    save_inspection(result)
+    save_alert(result)
+    await manager.broadcast({
+        "type": "inspection",
+        "inspection_id": result["inspection_id"],
+        "timestamp": result["timestamp"],
+        "machine_id": result["machine_id"],
+        "status": result["status"],
+        "severity": result["severity"]["name"],
+        "severity_level": result["severity"]["level"],
+        "prediction": result["prediction"],
+        "root_cause": result["root_cause"],
+        "anomaly": result["anomaly"],
+        "processing": result["processing"],
+    })
     return result
 
 # ── WEBCAM INSPECTION ─────────────────────────────────
@@ -171,6 +204,8 @@ async def inspect_webcam(image_data: str = None):
         img.save(temp_path)
 
         result = run_inspection(temp_path)
+        save_inspection(result)
+        save_alert(result)
 
         await manager.broadcast({
             "type":           "inspection",
@@ -347,6 +382,34 @@ async def anomaly_scan():
 
     except Exception as e:
         return {"error": str(e)}
+
+@app.get("/model/status")
+async def get_model_status():
+    status = model_status()
+    status["patchcore"] = patchcore.get_status()
+    status["isolation_forest"] = {
+        "model": "isolation_forest",
+        "path": str(detector.model_path),
+        "loaded": detector.model is not None,
+    }
+    return status
+
+@app.get("/model/metrics")
+async def get_model_metrics():
+    if not os.path.exists(METRICS_PATH):
+        return {
+            "available": False,
+            "path": METRICS_PATH,
+            "message": "Train YOLOv5n first to generate metrics_report.json",
+        }
+    with open(METRICS_PATH, "r", encoding="utf-8") as f:
+        metrics = json.load(f)
+    metrics["available"] = True
+    return metrics
+
+@app.post("/model/reload")
+async def post_model_reload():
+    return reload_model()
 
 # ── PATCHCORE — PRODUCT SETUP ─────────────────────────
 @app.post("/patchcore/setup")

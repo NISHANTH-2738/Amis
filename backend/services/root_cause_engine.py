@@ -1,9 +1,3 @@
-# backend/services/root_cause_engine.py
-
-from datetime import datetime
-
-# Simulated machine sensor state
-# In production this comes from IIoT / MES
 MOCK_MACHINE_STATE = {
     "M-01": {"tool_age_days": 3, "vibration": 1.0, "tension_kn": 4.2, "temperature_c": 58},
     "M-02": {"tool_age_days": 5, "vibration": 2.1, "tension_kn": 4.6, "temperature_c": 61},
@@ -13,90 +7,105 @@ MOCK_MACHINE_STATE = {
     "M-06": {"tool_age_days": 4, "vibration": 1.1, "tension_kn": 4.3, "temperature_c": 59},
 }
 
-# Defect → probable cause rules
-# Based on textile engineering knowledge
 CAUSE_RULES = {
     "needle_line": [
-        {"condition": lambda s: s["tool_age_days"] > 7,
-         "cause":  "Needle overdue for replacement",
-         "action": "Replace needle immediately",
-         "confidence": 0.91},
-        {"condition": lambda s: s["vibration"] > 1.5,
-         "cause":  "Excessive machine vibration bending needle",
-         "action": "Inspect and tighten machine mounts",
-         "confidence": 0.78},
+        {
+            "condition": lambda s: s["tool_age_days"] > 7,
+            "cause": "Needle overdue for replacement",
+            "action": "Replace needle immediately",
+            "confidence": 0.91,
+        },
+        {
+            "condition": lambda s: s["vibration"] > 1.5,
+            "cause": "Excessive machine vibration bending needle",
+            "action": "Inspect and tighten machine mounts",
+            "confidence": 0.78,
+        },
     ],
     "drop_stitch": [
-        {"condition": lambda s: s["tension_kn"] > 4.5,
-         "cause":  "Warp tension too high — thread skipping",
-         "action": "Reduce tension to 4.2 kN baseline",
-         "confidence": 0.85},
-        {"condition": lambda s: s["temperature_c"] > 63,
-         "cause":  "Motor overheating affecting timing",
-         "action": "Check cooling fan. Rest machine 10 min.",
-         "confidence": 0.72},
+        {
+            "condition": lambda s: s["tension_kn"] > 4.5,
+            "cause": "Warp tension too high; thread skipping",
+            "action": "Reduce tension to 4.2 kN baseline",
+            "confidence": 0.85,
+        },
+        {
+            "condition": lambda s: s["temperature_c"] > 63,
+            "cause": "Motor overheating affecting timing",
+            "action": "Check cooling fan and rest machine for 10 minutes",
+            "confidence": 0.72,
+        },
     ],
     "hole": [
-        {"condition": lambda s: s["tool_age_days"] > 6,
-         "cause":  "Worn needle tip causing thread breaks",
-         "action": "Replace needle. Inspect thread path.",
-         "confidence": 0.88},
-        {"condition": lambda s: s["vibration"] > 1.8,
-         "cause":  "High vibration causing misalignment",
-         "action": "Balance machine. Check bearings.",
-         "confidence": 0.76},
+        {
+            "condition": lambda s: s["tool_age_days"] > 6,
+            "cause": "Worn needle tip causing thread breaks",
+            "action": "Replace needle and inspect thread path",
+            "confidence": 0.88,
+        },
+        {
+            "condition": lambda s: s["vibration"] > 1.8,
+            "cause": "High vibration causing misalignment",
+            "action": "Balance machine and check bearings",
+            "confidence": 0.76,
+        },
     ],
     "run_ladder": [
-        {"condition": lambda s: s["tension_kn"] > 4.4,
-         "cause":  "Excess tension causing chain stitch failure",
-         "action": "Recalibrate tension to 4.1–4.3 kN",
-         "confidence": 0.83},
+        {
+            "condition": lambda s: s["tension_kn"] > 4.4,
+            "cause": "Excess tension causing chain stitch failure",
+            "action": "Recalibrate tension to 4.1-4.3 kN",
+            "confidence": 0.83,
+        }
     ],
     "stain": [
-        {"condition": lambda s: s["tool_age_days"] > 5,
-         "cause":  "Worn parts causing oil leakage onto fabric",
-         "action": "Inspect oil seals. Clean fabric path.",
-         "confidence": 0.79},
+        {
+            "condition": lambda s: s["tool_age_days"] > 5,
+            "cause": "Worn parts causing oil leakage onto fabric",
+            "action": "Inspect oil seals and clean fabric path",
+            "confidence": 0.79,
+        }
+    ],
+    "unknown_anomaly": [
+        {
+            "condition": lambda s: s["vibration"] > 1.5 or s["temperature_c"] > 63,
+            "cause": "Unknown visual anomaly correlated with unstable machine state",
+            "action": "Inspect machine state and review product sample manually",
+            "confidence": 0.66,
+        }
     ],
 }
 
+
 class RootCauseEngine:
-
-    def analyse(self, defect_class: str,
-                machine_id: str) -> dict:
-        """
-        Given a defect type and machine ID:
-        → Reads machine sensor state
-        → Matches against cause rules
-        → Returns most probable cause + action
-        """
-        state = MOCK_MACHINE_STATE.get(
+    def analyse(self, defect_class: str, machine_id: str, sensor_state: dict | None = None) -> dict:
+        state = sensor_state or MOCK_MACHINE_STATE.get(
             machine_id,
-            {"tool_age_days":0,"vibration":1.0,
-             "tension_kn":4.2,"temperature_c":58}
+            {"tool_age_days": 0, "vibration": 1.0, "tension_kn": 4.2, "temperature_c": 58},
         )
-        rules = CAUSE_RULES.get(defect_class, [])
-
         matched = []
-        for rule in rules:
+        for rule in CAUSE_RULES.get(defect_class, []):
             if rule["condition"](state):
-                matched.append({
-                    "cause":      rule["cause"],
-                    "action":     rule["action"],
-                    "confidence": rule["confidence"]
-                })
+                matched.append(
+                    {
+                        "cause": rule["cause"],
+                        "action": rule["action"],
+                        "confidence": rule["confidence"],
+                    }
+                )
 
         if not matched:
             return {
-                "cause":      "Unknown — no sensor correlation found",
-                "action":     "Manual inspection required",
+                "cause": "Unknown; no sensor correlation found",
+                "action": "Manual inspection required",
                 "confidence": 0.0,
-                "machine_state": state
+                "machine_id": machine_id,
+                "machine_state": state,
+                "all_causes": [],
             }
 
-        # Return highest confidence cause
-        best = max(matched, key=lambda x: x["confidence"])
+        best = max(matched, key=lambda item: item["confidence"])
+        best["machine_id"] = machine_id
         best["machine_state"] = state
-        best["all_causes"]    = matched
+        best["all_causes"] = matched
         return best
-    
