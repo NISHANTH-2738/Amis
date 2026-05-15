@@ -3,6 +3,7 @@ venv/
 __pycache__/
 *.pyc
 .DS_Store
+<<<<<<< HEAD
 ai_core/data/raw/
 ai_core/data/processed/
 ai_core/data/augmented/
@@ -11,6 +12,12 @@ ai_core/models/**/*.onnx
 ai_core/models/**/*.torchscript
 ai_core/models/**/*.pkl
 runs/
+
+ai_core/models/*.pt
+ai_core/data/raw/
+ai_core/data/processed/
+ai_core/data/augmented/
+
 uploads/
 heatmaps/
 .vscode/settings.json
