@@ -29,11 +29,19 @@ function fallbackBbox(seed: string) {
   };
 }
 
+function toPercent(value: unknown, fallback: number) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  if (numeric >= 0 && numeric <= 1) return Math.round(numeric * 10000) / 100;
+  return numeric;
+}
+
 export function normalizeDetection(payload: any): DefectDetection {
   const id = String(payload.id ?? payload.inspection_id ?? crypto.randomUUID());
-  const defect = payload.defect ?? payload.defect_class ?? payload.prediction?.class ?? "sensor_anomaly";
-  const severityName = String(payload.severity ?? payload.severity_name ?? payload.level_name ?? "MONITOR").toUpperCase();
+  const defect = payload.defect ?? payload.defect_class ?? payload.prediction?.label ?? payload.prediction?.class ?? payload.defects?.[0]?.class ?? "sensor_anomaly";
+  const severityName = String(payload.severity?.name ?? payload.severity ?? payload.severity_name ?? payload.level_name ?? "MONITOR").toUpperCase();
   const bbox = payload.bbox ?? payload.defects?.[0]?.bbox ?? fallbackBbox(id);
+  const fallback = fallbackBbox(id);
 
   return {
     id,
@@ -46,13 +54,13 @@ export function normalizeDetection(payload: any): DefectDetection {
     severity: severityMap[severityName] ?? "advisory",
     status: payload.status === "PASS" ? "approved" : "new",
     bbox: {
-      x: Number(bbox.x ?? bbox.left ?? fallbackBbox(id).x),
-      y: Number(bbox.y ?? bbox.top ?? fallbackBbox(id).y),
-      width: Number(bbox.width ?? bbox.w ?? fallbackBbox(id).width),
-      height: Number(bbox.height ?? bbox.h ?? fallbackBbox(id).height),
+      x: toPercent(bbox.x ?? bbox.left, fallback.x),
+      y: toPercent(bbox.y ?? bbox.top, fallback.y),
+      width: toPercent(bbox.width ?? bbox.w, fallback.width),
+      height: toPercent(bbox.height ?? bbox.h, fallback.height),
     },
     imageUrl: payload.imageUrl ?? "",
-    explanation: payload.explanation ?? payload.root_cause ?? payload.action ?? "Live inspection event from FabriGuard backend.",
+    explanation: payload.explanation ?? payload.root_cause?.cause ?? payload.root_cause ?? payload.severity?.action ?? payload.action ?? "Live inspection event from FabriGuard backend.",
     operator: payload.operator,
   };
 }
@@ -101,5 +109,17 @@ export const fabriGuardApi = {
       { primary_model: "yolov8", weights_available: false, fallback: "mock_detector", loaded: false },
       useMock,
     ),
+  inspectImage: async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch(`${API_BASE}/inspect/frame`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!response.ok) {
+      throw new Error(`Inspection failed with HTTP ${response.status}`);
+    }
+    return response.json();
+  },
   trends: async () => trends,
 };

@@ -8,7 +8,9 @@ import {
   BrainCircuit,
   Camera,
   Gauge,
+  ImagePlus,
   LayoutDashboard,
+  Loader2,
   MonitorCog,
   Search,
   Settings,
@@ -36,6 +38,7 @@ import { KpiCard } from "@/components/kpi-card";
 import { ReviewDrawer } from "@/components/review-drawer";
 import { SectionTitle, StatusPill } from "@/components/status";
 import { useLiveFabriGuard } from "@/hooks/use-live-fabriguard";
+import { fabriGuardApi, normalizeDetection } from "@/lib/api";
 import { executiveKpis, machines, operatorKpis, sensors, supervisorKpis, trends } from "@/lib/mock-data";
 import { cn, formatPercent, timeAgo } from "@/lib/utils";
 import { useUiStore } from "@/stores/use-ui-store";
@@ -62,8 +65,13 @@ const roleLabels: Record<Role, string> = {
 export function AppShell() {
   const { role, page, useMock, density, search, setRole, setPage, setUseMock, setDensity, setSearch } = useUiStore();
   const { socketState, detections, alerts } = useLiveFabriGuard(useMock);
+  const [uploadedDetections, setUploadedDetections] = useState<DefectDetection[]>([]);
   const [selectedDetection, setSelectedDetection] = useState<DefectDetection | null>(null);
   const currentPage = navItems.find((item) => item.key === page) ?? navItems[0];
+  const visibleDetections = useMemo(
+    () => [...uploadedDetections, ...detections],
+    [uploadedDetections, detections],
+  );
 
   return (
     <main className="min-h-screen bg-[#080b10] text-slate-100">
@@ -155,12 +163,12 @@ export function AppShell() {
 
           <div className="h-[calc(100vh-64px)] overflow-y-auto p-5">
             <motion.div key={`${role}-${page}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
-              {page === "dashboard" && <RoleDashboard role={role} detections={detections} alerts={alerts} onReview={setSelectedDetection} />}
-              {page === "live" && <LiveMonitoring detections={detections} onReview={setSelectedDetection} />}
+              {page === "dashboard" && <RoleDashboard role={role} detections={visibleDetections} alerts={alerts} onReview={setSelectedDetection} onInspection={(detection) => setUploadedDetections((current) => [detection, ...current].slice(0, 12))} />}
+              {page === "live" && <LiveMonitoring detections={visibleDetections} onReview={setSelectedDetection} onInspection={(detection) => setUploadedDetections((current) => [detection, ...current].slice(0, 12))} />}
               {page === "production" && <ProductionAnalytics />}
               {page === "sensors" && <SensorMonitoring />}
               {page === "machines" && <MachineHealth />}
-              {page === "operators" && <OperatorAnalytics detections={detections} onReview={setSelectedDetection} />}
+              {page === "operators" && <OperatorAnalytics detections={visibleDetections} onReview={setSelectedDetection} />}
               {page === "training" && <TrainingWorkspace />}
               {page === "alerts" && <AlertsCenter alerts={alerts} />}
               {page === "settings" && <SettingsPanel />}
@@ -188,11 +196,13 @@ function RoleDashboard({
   detections,
   alerts,
   onReview,
+  onInspection,
 }: {
   role: Role;
   detections: DefectDetection[];
   alerts: ReturnType<typeof useLiveFabriGuard>["alerts"];
   onReview: (detection: DefectDetection) => void;
+  onInspection: (detection: DefectDetection) => void;
 }) {
   if (role === "operator") {
     return (
@@ -201,7 +211,7 @@ function RoleDashboard({
           {operatorKpis.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} large />)}
         </div>
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_0.9fr]">
-          <LiveCamera detections={detections} />
+          <ImageInspectionPanel detections={detections} onInspection={onInspection} />
           <AlertRail alerts={alerts} />
         </div>
         <DefectTable detections={detections.slice(0, 8)} onReview={onReview} compact />
@@ -238,11 +248,11 @@ function RoleDashboard({
   );
 }
 
-function LiveMonitoring({ detections, onReview }: { detections: DefectDetection[]; onReview: (detection: DefectDetection) => void }) {
+function LiveMonitoring({ detections, onReview, onInspection }: { detections: DefectDetection[]; onReview: (detection: DefectDetection) => void; onInspection: (detection: DefectDetection) => void }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.45fr_0.8fr]">
-        <LiveCamera detections={detections} detailed />
+        <ImageInspectionPanel detections={detections} onInspection={onInspection} detailed />
         <div className="space-y-4">
           <InferenceStream detections={detections} />
           <DefectHeatmap />
@@ -253,15 +263,114 @@ function LiveMonitoring({ detections, onReview }: { detections: DefectDetection[
   );
 }
 
-function LiveCamera({ detections, detailed = false }: { detections: DefectDetection[]; detailed?: boolean }) {
+function ImageInspectionPanel({
+  detections,
+  onInspection,
+  detailed = false,
+}: {
+  detections: DefectDetection[];
+  onInspection: (detection: DefectDetection) => void;
+  detailed?: boolean;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [result, setResult] = useState<any | null>(null);
+  const [isInspecting, setIsInspecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl(null);
+      return;
+    }
+    const nextUrl = URL.createObjectURL(file);
+    setPreviewUrl(nextUrl);
+    return () => URL.revokeObjectURL(nextUrl);
+  }, [file]);
+
+  const inspect = async () => {
+    if (!file) return;
+    setIsInspecting(true);
+    setError(null);
+    try {
+      const response = await fabriGuardApi.inspectImage(file);
+      setResult(response);
+      onInspection(normalizeDetection(response));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Inspection failed");
+    } finally {
+      setIsInspecting(false);
+    }
+  };
+
+  const latest = result ? normalizeDetection(result) : detections[0];
+
+  return (
+    <section className="industrial-panel rounded-md p-4">
+      <SectionTitle
+        eyebrow="Image Inspection"
+        title="Upload Fabric Image / AI Defect Analysis"
+        right={<StatusPill severity={result?.status === "FAIL" ? "warning" : "normal"} label={isInspecting ? "processing" : "ready"} />}
+      />
+      <div className="mb-3 grid gap-3 xl:grid-cols-[1fr_auto]">
+        <label className="flex cursor-pointer items-center gap-3 rounded-md border border-dashed border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-300 hover:border-sky-500">
+          <ImagePlus className="h-4 w-4 text-sky-300" />
+          <span className="truncate">{file ? file.name : "Choose image for full detector pipeline"}</span>
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              setFile(event.target.files?.[0] ?? null);
+              setResult(null);
+              setError(null);
+            }}
+          />
+        </label>
+        <button
+          onClick={inspect}
+          disabled={!file || isInspecting}
+          className="inline-flex items-center justify-center gap-2 rounded-md bg-sky-500 px-4 py-2 text-sm font-semibold text-sky-950 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isInspecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+          Inspect Image
+        </button>
+      </div>
+      {error ? <div className="mb-3 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div> : null}
+      <LiveCamera detections={latest ? [latest] : detections} detailed={detailed} imageUrl={previewUrl ?? undefined} />
+      {result ? (
+        <div className="mt-3 grid gap-3 text-sm xl:grid-cols-4">
+          <ResultMetric label="Status" value={result.status ?? "-"} />
+          <ResultMetric label="Severity" value={result.severity?.name ?? "-"} />
+          <ResultMetric label="Detector" value={result.model_source ?? result.processing?.model_source ?? "-"} />
+          <ResultMetric label="Latency" value={`${result.inference_ms ?? result.processing?.latency_ms ?? 0} ms`} />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ResultMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-slate-800 bg-slate-950 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{label}</div>
+      <div className="mt-1 truncate font-mono text-sm text-slate-100">{value}</div>
+    </div>
+  );
+}
+
+function LiveCamera({ detections, detailed = false, imageUrl }: { detections: DefectDetection[]; detailed?: boolean; imageUrl?: string }) {
   const active = detections[0];
   const bbox = active?.bbox ?? { x: 42, y: 28, width: 18, height: 24 };
   return (
-    <section className="industrial-panel rounded-md p-4">
-      <SectionTitle eyebrow="Live Cell View" title="Camera Feed / AI Bounding Boxes" right={<StatusPill severity="normal" label="streaming" />} />
+    <div>
       <div className={cn("relative overflow-hidden rounded-md border border-slate-700 bg-slate-950 grid-bg", detailed ? "h-[470px]" : "h-[390px]")}>
         <div className="absolute inset-y-0 w-1/3 scanline" />
-        <div className="absolute left-[8%] top-[14%] h-[72%] w-[84%] rounded border border-slate-700 bg-slate-900/70" />
+        {imageUrl ? (
+          <img src={imageUrl} alt="Uploaded fabric inspection preview" className="absolute inset-0 h-full w-full object-contain" />
+        ) : (
+          <div className="absolute left-[8%] top-[14%] h-[72%] w-[84%] rounded border border-slate-700 bg-slate-900/70" />
+        )}
         {active ? (
           <div
             className="absolute border-2 border-red-400 bg-red-500/10"
@@ -273,12 +382,12 @@ function LiveCamera({ detections, detailed = false }: { detections: DefectDetect
           </div>
         ) : null}
         <div className="absolute bottom-3 left-3 grid grid-cols-3 gap-2 text-xs">
-          <span className="rounded bg-slate-950/90 px-2 py-1 text-slate-300">CAM-04</span>
-          <span className="rounded bg-slate-950/90 px-2 py-1 text-slate-300">96 ms</span>
-          <span className="rounded bg-slate-950/90 px-2 py-1 text-slate-300">YOLOv8</span>
+          <span className="rounded bg-slate-950/90 px-2 py-1 text-slate-300">UPLOAD</span>
+          <span className="rounded bg-slate-950/90 px-2 py-1 text-slate-300">{active ? formatPercent(active.confidence) : "--"}</span>
+          <span className="rounded bg-slate-950/90 px-2 py-1 text-slate-300">Roboflow</span>
         </div>
       </div>
-    </section>
+    </div>
   );
 }
 
