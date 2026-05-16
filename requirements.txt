@@ -18,7 +18,7 @@ torchvision
 opencv-python
 pillow
 python-dotenv
-inference-sdk
+inference-sdk; python_version < "3.13"
 requests
 ultralytics
 albumentations

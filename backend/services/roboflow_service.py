@@ -26,9 +26,12 @@ load_dotenv()
 
 LOGGER = logging.getLogger(__name__)
 
-ROBOFLOW_API_URL = os.getenv("ROBOFLOW_API_URL", "https://detect.roboflow.com")
+ROBOFLOW_API_URL = os.getenv("ROBOFLOW_API_URL", "https://serverless.roboflow.com")
 ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY")
 ROBOFLOW_MODEL_ID = os.getenv("ROBOFLOW_MODEL_ID")
+ROBOFLOW_WORKSPACE_NAME = os.getenv("ROBOFLOW_WORKSPACE_NAME")
+ROBOFLOW_WORKFLOW_ID = os.getenv("ROBOFLOW_WORKFLOW_ID")
+ROBOFLOW_WORKFLOW_IMAGE_KEY = os.getenv("ROBOFLOW_WORKFLOW_IMAGE_KEY", "image")
 ROBOFLOW_TIMEOUT_SECONDS = float(os.getenv("ROBOFLOW_TIMEOUT_SECONDS", "8"))
 ROBOFLOW_CONFIDENCE_THRESHOLD = float(os.getenv("ROBOFLOW_CONFIDENCE_THRESHOLD", "0.35"))
 ROBOFLOW_MAX_IMAGE_SIZE = int(os.getenv("ROBOFLOW_MAX_IMAGE_SIZE", "640"))
@@ -54,8 +57,13 @@ def _get_client():
     global _client
     if _client is not None:
         return _client
-    if not ROBOFLOW_API_KEY or not ROBOFLOW_MODEL_ID:
-        LOGGER.warning("Roboflow disabled: set ROBOFLOW_API_KEY and ROBOFLOW_MODEL_ID in .env")
+    has_workflow = ROBOFLOW_WORKSPACE_NAME and ROBOFLOW_WORKFLOW_ID
+    has_model = ROBOFLOW_MODEL_ID
+    if not ROBOFLOW_API_KEY or not (has_workflow or has_model):
+        LOGGER.warning(
+            "Roboflow disabled: set ROBOFLOW_API_KEY and either "
+            "ROBOFLOW_WORKSPACE_NAME plus ROBOFLOW_WORKFLOW_ID, or ROBOFLOW_MODEL_ID in .env"
+        )
         return None
     try:
         from inference_sdk import InferenceHTTPClient
@@ -80,6 +88,8 @@ def _cache_key(image_path: str) -> str:
         [
             _file_hash(image_path),
             ROBOFLOW_MODEL_ID or "",
+            ROBOFLOW_WORKSPACE_NAME or "",
+            ROBOFLOW_WORKFLOW_ID or "",
             str(ROBOFLOW_CONFIDENCE_THRESHOLD),
             str(ROBOFLOW_MAX_IMAGE_SIZE),
             str(ROBOFLOW_JPEG_QUALITY),
@@ -149,8 +159,29 @@ def _scale_bbox_to_original(prediction: dict[str, Any], prepared: PreparedImage)
     ]
 
 
-def _standardize_predictions(result: dict[str, Any], prepared: PreparedImage) -> list[dict[str, Any]]:
-    predictions = result.get("predictions") or []
+def _collect_predictions(result: Any) -> list[dict[str, Any]]:
+    """Find detection-like prediction lists in Roboflow model or workflow output."""
+    if isinstance(result, list):
+        predictions = []
+        for item in result:
+            predictions.extend(_collect_predictions(item))
+        return predictions
+    if not isinstance(result, dict):
+        return []
+
+    direct = result.get("predictions")
+    if isinstance(direct, list):
+        return [item for item in direct if isinstance(item, dict)]
+
+    predictions = []
+    for value in result.values():
+        if isinstance(value, (dict, list)):
+            predictions.extend(_collect_predictions(value))
+    return predictions
+
+
+def _standardize_predictions(result: Any, prepared: PreparedImage) -> list[dict[str, Any]]:
+    predictions = _collect_predictions(result)
     detections = []
     for prediction in predictions:
         confidence = float(prediction.get("confidence", 0.0))
@@ -186,7 +217,16 @@ def detect_defects(image_path: str) -> list[dict[str, Any]]:
 
         prepared = _prepare_image(image_path)
         try:
-            future = _executor.submit(client.infer, prepared.path, model_id=ROBOFLOW_MODEL_ID)
+            if ROBOFLOW_WORKSPACE_NAME and ROBOFLOW_WORKFLOW_ID:
+                future = _executor.submit(
+                    client.run_workflow,
+                    workspace_name=ROBOFLOW_WORKSPACE_NAME,
+                    workflow_id=ROBOFLOW_WORKFLOW_ID,
+                    images={ROBOFLOW_WORKFLOW_IMAGE_KEY: prepared.path},
+                    use_cache=True,
+                )
+            else:
+                future = _executor.submit(client.infer, prepared.path, model_id=ROBOFLOW_MODEL_ID)
             result = future.result(timeout=ROBOFLOW_TIMEOUT_SECONDS)
             detections = _standardize_predictions(result, prepared)
             _cache_set(key, detections)
