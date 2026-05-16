@@ -224,7 +224,13 @@ async def recent_inspections(count: int = 20):
             "machine_id":     r.machine_id,
             "status":         r.status,
             "defect_class":   r.defect_class,
+            "defects":        [{
+                "class": r.defect_class,
+                "confidence": r.confidence,
+                "bbox": r.bbox,
+            }] if r.defect_class else [],
             "confidence":     r.confidence,
+            "bbox":           r.bbox,
             "severity_level": r.severity_level,
             "severity_name":  r.severity_name,
             "root_cause":     r.root_cause,

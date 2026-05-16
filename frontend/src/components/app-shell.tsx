@@ -414,7 +414,12 @@ function LiveCamera({ detections, detailed = false, imageUrl }: { detections: De
   const [imageFrame, setImageFrame] = useState({ left: 0, top: 0, width: 100, height: 100 });
   const active = detections[0];
   const bbox = active?.bbox ?? { x: 42, y: 28, width: 18, height: 24 };
-  const showBox = Boolean(active && !["normal", "pass", "none"].includes(active.defect.toLowerCase()));
+  const showBox = Boolean(
+    active &&
+    !["normal", "pass", "none", "sensor_anomaly"].includes(active.defect.toLowerCase()) &&
+    bbox.width > 0 &&
+    bbox.height > 0,
+  );
   const overlay = imageUrl
     ? {
         left: `${imageFrame.left + (bbox.x * imageFrame.width) / 100}%`,

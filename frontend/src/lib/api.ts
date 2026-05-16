@@ -70,9 +70,14 @@ function normalizeBbox(bbox: any, fallback: ReturnType<typeof fallbackBbox>, ima
 
 export function normalizeDetection(payload: any): DefectDetection {
   const id = String(payload.id ?? payload.inspection_id ?? crypto.randomUUID());
-  const defect = payload.defect ?? payload.defect_class ?? payload.prediction?.label ?? payload.prediction?.class ?? payload.defects?.[0]?.class ?? "sensor_anomaly";
+  const visualDefect = payload.defects?.[0]?.class ?? payload.defect_class ?? payload.defect;
+  const predictionDefect = payload.prediction?.is_defect
+    ? payload.prediction?.label ?? payload.prediction?.class
+    : null;
+  const anomalyOnly = payload.anomaly?.is_anomaly || payload.severity?.defect === "sensor_anomaly";
+  const defect = visualDefect ?? predictionDefect ?? (payload.status === "PASS" ? "normal" : anomalyOnly ? "sensor_anomaly" : "unknown_anomaly");
   const severityName = String(payload.severity?.name ?? payload.severity ?? payload.severity_name ?? payload.level_name ?? "MONITOR").toUpperCase();
-  const bbox = payload.bbox ?? payload.defects?.[0]?.bbox ?? fallbackBbox(id);
+  const bbox = payload.bbox ?? payload.defects?.[0]?.bbox;
   const fallback = fallbackBbox(id);
 
   return {
@@ -85,7 +90,7 @@ export function normalizeDetection(payload: any): DefectDetection {
     confidence: boundedPercent(payload.confidence ?? payload.defects?.[0]?.confidence, 0.72),
     severity: severityMap[severityName] ?? "advisory",
     status: payload.status === "PASS" ? "approved" : "new",
-    bbox: normalizeBbox(bbox, fallback, payload.image),
+    bbox: bbox ? normalizeBbox(bbox, fallback, payload.image) : { x: 0, y: 0, width: 0, height: 0 },
     imageUrl: payload.imageUrl ?? "",
     explanation: payload.explanation ?? payload.root_cause?.cause ?? payload.root_cause ?? payload.severity?.action ?? payload.action ?? "Live inspection event from FabriGuard backend.",
     operator: payload.operator,
