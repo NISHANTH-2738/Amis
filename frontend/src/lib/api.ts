@@ -36,6 +36,36 @@ function toPercent(value: unknown, fallback: number) {
   return numeric;
 }
 
+function normalizeBbox(bbox: any, fallback: ReturnType<typeof fallbackBbox>, image?: { width?: number; height?: number }) {
+  if (Array.isArray(bbox) && bbox.length === 4) {
+    const [x1, y1, x2, y2] = bbox.map(Number);
+    if ([x1, y1, x2, y2].every(Number.isFinite)) {
+      const imageWidth = Number(image?.width);
+      const imageHeight = Number(image?.height);
+      if (imageWidth > 0 && imageHeight > 0) {
+        return {
+          x: (x1 / imageWidth) * 100,
+          y: (y1 / imageHeight) * 100,
+          width: (Math.max(0, x2 - x1) / imageWidth) * 100,
+          height: (Math.max(0, y2 - y1) / imageHeight) * 100,
+        };
+      }
+      return {
+        x: x1,
+        y: y1,
+        width: Math.max(0, x2 - x1),
+        height: Math.max(0, y2 - y1),
+      };
+    }
+  }
+  return {
+    x: toPercent(bbox?.x ?? bbox?.left, fallback.x),
+    y: toPercent(bbox?.y ?? bbox?.top, fallback.y),
+    width: toPercent(bbox?.width ?? bbox?.w, fallback.width),
+    height: toPercent(bbox?.height ?? bbox?.h, fallback.height),
+  };
+}
+
 export function normalizeDetection(payload: any): DefectDetection {
   const id = String(payload.id ?? payload.inspection_id ?? crypto.randomUUID());
   const defect = payload.defect ?? payload.defect_class ?? payload.prediction?.label ?? payload.prediction?.class ?? payload.defects?.[0]?.class ?? "sensor_anomaly";
@@ -53,12 +83,7 @@ export function normalizeDetection(payload: any): DefectDetection {
     confidence: boundedPercent(payload.confidence ?? payload.defects?.[0]?.confidence, 0.72),
     severity: severityMap[severityName] ?? "advisory",
     status: payload.status === "PASS" ? "approved" : "new",
-    bbox: {
-      x: toPercent(bbox.x ?? bbox.left, fallback.x),
-      y: toPercent(bbox.y ?? bbox.top, fallback.y),
-      width: toPercent(bbox.width ?? bbox.w, fallback.width),
-      height: toPercent(bbox.height ?? bbox.h, fallback.height),
-    },
+    bbox: normalizeBbox(bbox, fallback, payload.image),
     imageUrl: payload.imageUrl ?? "",
     explanation: payload.explanation ?? payload.root_cause?.cause ?? payload.root_cause ?? payload.severity?.action ?? payload.action ?? "Live inspection event from FabriGuard backend.",
     operator: payload.operator,
@@ -112,7 +137,7 @@ export const fabriGuardApi = {
   inspectImage: async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    const response = await fetch(`${API_BASE}/inspect/frame`, {
+    const response = await fetch(`${API_BASE}/inspect-image`, {
       method: "POST",
       body: formData,
     });

@@ -1,132 +1,123 @@
+"""Redis notification helpers for realtime dashboard compatibility.
 
-# backend/services/notification_service.py
-import redis
+FastAPI websockets are the primary live path. Redis is optional here: when it
+is unavailable on a low-resource laptop, the inspection pipeline continues and
+the API websocket manager still broadcasts events to connected dashboards.
+"""
+
+from __future__ import annotations
+
 import json
-from datetime import datetime
 
-# Connect to Redis running in Docker
-r = redis.Redis(host="localhost", port=6379, db=0)
+import redis
 
-# Channel names — dashboard subscribes to these
+from backend.database.connection import SessionLocal
+from backend.database.models import Alert
+
+
+try:
+    r = redis.Redis(
+        host="localhost",
+        port=6379,
+        db=0,
+        decode_responses=True,
+        socket_connect_timeout=0.25,
+        socket_timeout=0.25,
+    )
+    r.ping()
+except Exception as exc:
+    print(f"Redis notifications unavailable: {exc}")
+    r = None
+
+
 CHANNELS = {
     "inspection": "fabriguard:inspections",
-    "alert":      "fabriguard:alerts",
-    "machine":    "fabriguard:machines",
+    "alert": "fabriguard:alerts",
+    "machine": "fabriguard:machines",
 }
 
-def publish_inspection(result: dict):
-    """
-    Publishes every inspection result to Redis.
-    Dashboard receives this in real time via WebSocket.
-    """
-    payload = {
-        "type":          "inspection",
-        "inspection_id": result["inspection_id"],
-        "timestamp":     result["timestamp"],
-        "machine_id":    result["machine_id"],
-        "status":        result["status"],
-        "severity":      result["severity"]["name"],
-        "defect":        result["defects"][0]["class"]
-                         if result["defects"] else None,
-        "inference_ms":  result["inference_ms"],
-    }
-    r.publish(
-        CHANNELS["inspection"],
-        json.dumps(payload)
-    )
 
-def publish_alert(result: dict):
-    """
-    Publishes alerts only for Level 2 and above.
-    Inspector, supervisor, engineer get notified.
-    """
-    level = result["severity"]["level"]
-    print(f"  → publish_alert called: level={level}")  # debug
-    if level < 2:
+def publish_inspection(result: dict) -> None:
+    if not r:
         return
-
-    # Determine who gets notified
-    notify = []
-    if level >= 2: notify.append("inspector")
-    if level >= 3: notify.append("supervisor")
-    if level >= 4: notify.append("engineer")
-
+    defect = result["defects"][0] if result.get("defects") else None
     payload = {
-        "type":        "alert",
-        "level":       level,
-        "level_name":  result["severity"]["name"],
-        "machine_id":  result["machine_id"],
-        "defect":      result["defects"][0]["class"],
-        "confidence":  result["defects"][0]["confidence"],
-        "action":      result["severity"]["action"],
-        "root_cause":  result["root_cause"]["cause"]
-                       if result["root_cause"] else None,
-        "fix":         result["root_cause"]["action"]
-                       if result["root_cause"] else None,
-        "notify":      notify,
-        "timestamp":   result["timestamp"],
+        "type": "inspection",
+        "inspection_id": result["inspection_id"],
+        "timestamp": result["timestamp"],
+        "machine_id": result["machine_id"],
+        "status": result["status"],
+        "severity": result["severity"]["name"],
+        "severity_level": result["severity"]["level"],
+        "defects": result.get("defects", []),
+        "defect": defect.get("class") if defect else None,
+        "confidence": defect.get("confidence") if defect else None,
+        "bbox": defect.get("bbox") if defect else None,
+        "inference_ms": result["inference_ms"],
+    }
+    r.publish(CHANNELS["inspection"], json.dumps(payload))
+
+
+def publish_alert(result: dict) -> None:
+    if not r or result["severity"]["level"] < 2:
+        return
+    defect = result["defects"][0] if result.get("defects") else None
+    payload = {
+        "type": "alert",
+        "level": result["severity"]["level"],
+        "level_name": result["severity"]["name"],
+        "machine_id": result["machine_id"],
+        "defect": defect.get("class") if defect else "sensor_anomaly",
+        "confidence": defect.get("confidence") if defect else result.get("anomaly", {}).get("score"),
+        "action": result["severity"]["action"],
+        "root_cause": result["root_cause"]["cause"] if result.get("root_cause") else None,
+        "fix": result["root_cause"]["action"] if result.get("root_cause") else None,
+        "timestamp": result["timestamp"],
         "inspection_id": result["inspection_id"],
     }
-
-    r.publish(
-        CHANNELS["alert"],
-        json.dumps(payload)
-    )
-
-    # Also store in Redis list — keeps last 50 alerts
-    r.lpush("fabriguard:alert_history",
-            json.dumps(payload))
+    r.publish(CHANNELS["alert"], json.dumps(payload))
+    r.lpush("fabriguard:alert_history", json.dumps(payload))
     r.ltrim("fabriguard:alert_history", 0, 49)
 
-def get_recent_alerts(count: int = 10) -> list:
-    """Returns last N alerts from Redis."""
-    raw = r.lrange("fabriguard:alert_history",
-                   0, count - 1)
-    return [json.loads(a) for a in raw]
 
-def update_dashboard_stats(stats: dict):
-    """Updates live dashboard numbers in Redis cache."""
-    r.setex(
-        "fabriguard:dashboard_stats",
-        60,               # expires after 60 seconds
-        json.dumps(stats)
-    )
+def get_recent_alerts(count: int = 10) -> list:
+    if not r:
+        db = SessionLocal()
+        try:
+            records = db.query(Alert).order_by(Alert.id.desc()).limit(count).all()
+            return [
+                {
+                    "id": record.id,
+                    "inspection_id": record.inspection_id,
+                    "timestamp": record.timestamp.isoformat() if record.timestamp else None,
+                    "machine_id": record.machine_id,
+                    "level": record.alert_level,
+                    "level_name": record.alert_name,
+                    "defect": record.defect_class,
+                    "message": record.message,
+                    "acknowledged": record.acknowledged,
+                }
+                for record in records
+            ]
+        finally:
+            db.close()
+    raw = r.lrange("fabriguard:alert_history", 0, count - 1)
+    return [json.loads(item) for item in raw]
+
+
+def update_dashboard_stats(stats: dict) -> None:
+    if r:
+        r.setex("fabriguard:dashboard_stats", 60, json.dumps(stats))
+
 
 def get_dashboard_stats() -> dict:
-    """Returns cached dashboard stats."""
-    raw = r.get("fabriguard:dashboard_stats")
-    if raw:
-        return json.loads(raw)
-    return {
+    fallback = {
         "inspected_today": 0,
-        "defects_today":   0,
-        "active_alerts":   0,
-        "defect_rate":     0.0
+        "defects_today": 0,
+        "active_alerts": 0,
+        "defect_rate": 0.0,
     }
-def save_alert(result: dict):
-    if result["severity"]["level"] < 2:
-        return
-
-    db = SessionLocal()
-    try:
-        alert = Alert(
-            inspection_id = result["inspection_id"],
-            machine_id    = result["machine_id"],
-            alert_level   = result["severity"]["level"],
-            alert_name    = result["severity"]["name"],
-            defect_class  = result["defects"][0]["class"],
-            message       = (
-                f"{result['severity']['action']} | "
-                f"Cause: {result['root_cause']['cause']}"
-                if result["root_cause"]
-                else result["severity"]["action"]
-            ),
-        )
-        db.add(alert)
-        db.commit()
-
-    except Exception as e:
-        db.rollback()
-        print(f"Alert save error: {e}")
-    finally:
-        db.close()
+    if not r:
+        return fallback
+    raw = r.get("fabriguard:dashboard_stats")
+    return json.loads(raw) if raw else fallback

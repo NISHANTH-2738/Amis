@@ -11,9 +11,9 @@ from fastapi.responses import JSONResponse
 import json, uuid, importlib
 from datetime import datetime
 
-from backend.services.inspection_pipeline  import run_inspection
+from backend.services.inspection_pipeline  import run_inspection_flow
 from backend.services.database_service     import (
-    get_todays_stats, save_inspection, save_alert
+    get_todays_stats
 )
 from backend.services.notification_service import (
     get_recent_alerts, get_dashboard_stats
@@ -51,9 +51,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.on_event("startup")
-async def startup():
-    create_tables()
 # ── WEBSOCKET MANAGER ────────────────────────────────
 class ConnectionManager:
     def __init__(self):
@@ -122,52 +119,45 @@ async def inspect(file: UploadFile = File(None)):
         with open(image_path, "wb") as f:
             f.write(await file.read())
 
-    result = run_inspection(image_path)
-    save_inspection(result)
-    save_alert(result)
+    return await run_inspection_flow(image_path, broadcast=manager.broadcast)
 
-    # Broadcast inspection to dashboard
-    await manager.broadcast({
-        "type":           "inspection",
-        "inspection_id":  result["inspection_id"],
-        "timestamp":      result["timestamp"],
-        "machine_id":     result["machine_id"],
-        "status":         result["status"],
-        "severity":       result["severity"]["name"],
-        "severity_level": result["severity"]["level"],
-        "defect":         result["defects"][0]["class"]
-                          if result["defects"] else None,
-        "confidence":     result["defects"][0]["confidence"]
-                          if result["defects"] else None,
-        "action":         result["severity"]["action"],
-        "root_cause":     result["root_cause"]["cause"]
-                          if result["root_cause"] else None,
-        "fix":            result["root_cause"]["action"]
-                          if result["root_cause"] else None,
-        "inference_ms":   result["inference_ms"],
-    })
 
-    # Fire alert broadcast for level 2+
-    if result["severity"]["level"] >= 2:
-        defect_name = result["defects"][0]["class"] if result["defects"] else "sensor_anomaly"
-        await manager.broadcast({
-            "type":       "alert",
-            "level":      result["severity"]["level"],
-            "level_name": result["severity"]["name"],
-            "machine_id": result["machine_id"],
-            "defect":     defect_name,
-            "action":     result["severity"]["action"],
-            "cause":      result["root_cause"]["cause"]
-                          if result["root_cause"] else None,
-        })
-
-    return result
+@app.post("/inspect-image")
+async def inspect_image(file: UploadFile = File(...)):
+    """
+    Production image-upload inspection endpoint.
+    Upload image -> hosted Roboflow inference -> severity/root cause -> DB
+    persistence -> websocket broadcast -> structured API response.
+    """
+    os.makedirs("uploads/inspect", exist_ok=True)
+    safe_name = file.filename.replace(" ", "_")
+    image_path = f"uploads/inspect/{uuid.uuid4()}_{safe_name}"
+    try:
+        with open(image_path, "wb") as f:
+            f.write(await file.read())
+        return await run_inspection_flow(image_path, broadcast=manager.broadcast)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "ERROR",
+                "message": "Inspection failed safely",
+                "detail": str(exc),
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
+    finally:
+        try:
+            if os.path.exists(image_path):
+                os.remove(image_path)
+        except OSError:
+            pass
 
 @app.post("/inspect/frame")
 async def inspect_frame(file: UploadFile = File(...)):
     """
     Single-frame camera/image inference endpoint.
-    Uses the same hybrid YOLOv5n + PatchCore + Isolation Forest pipeline.
+    Uses the same hosted Roboflow + PatchCore + Isolation Forest pipeline.
     """
     os.makedirs("uploads/frame", exist_ok=True)
     safe_name = file.filename.replace(" ", "_")
@@ -175,23 +165,7 @@ async def inspect_frame(file: UploadFile = File(...)):
     with open(image_path, "wb") as f:
         f.write(await file.read())
 
-    result = run_inspection(image_path)
-    save_inspection(result)
-    save_alert(result)
-    await manager.broadcast({
-        "type": "inspection",
-        "inspection_id": result["inspection_id"],
-        "timestamp": result["timestamp"],
-        "machine_id": result["machine_id"],
-        "status": result["status"],
-        "severity": result["severity"]["name"],
-        "severity_level": result["severity"]["level"],
-        "prediction": result["prediction"],
-        "root_cause": result["root_cause"],
-        "anomaly": result["anomaly"],
-        "processing": result["processing"],
-    })
-    return result
+    return await run_inspection_flow(image_path, broadcast=manager.broadcast)
 
 # ── WEBCAM INSPECTION ─────────────────────────────────
 @app.post("/inspect/webcam")
@@ -217,26 +191,7 @@ async def inspect_webcam(image_data: str = None):
         temp_path = f"uploads/webcam/{uuid.uuid4()}.jpg"
         img.save(temp_path)
 
-        result = run_inspection(temp_path)
-        save_inspection(result)
-        save_alert(result)
-
-        await manager.broadcast({
-            "type":           "inspection",
-            "inspection_id":  result["inspection_id"],
-            "timestamp":      result["timestamp"],
-            "machine_id":     result["machine_id"],
-            "status":         result["status"],
-            "severity":       result["severity"]["name"],
-            "severity_level": result["severity"]["level"],
-            "defect":         result["defects"][0]["class"]
-                              if result["defects"] else None,
-            "confidence":     result["defects"][0]["confidence"]
-                              if result["defects"] else None,
-            "source":         result["model_source"],
-        })
-
-        return result
+        return await run_inspection_flow(temp_path, broadcast=manager.broadcast)
 
     except Exception as e:
         return {"error": str(e)}

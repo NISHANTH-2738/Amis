@@ -25,6 +25,8 @@ try:
         port=6379,
         db=0,
         decode_responses=True,
+        socket_connect_timeout=0.25,
+        socket_timeout=0.25,
     )
 
     r.ping()
@@ -171,46 +173,6 @@ def save_alert(result: dict):
         db.add(alert)
 
         db.commit()
-
-        # -------------------------------------
-        # Redis Realtime Alert Push
-        # -------------------------------------
-
-        if r:
-            alert_payload = {
-                "type": "alert",
-                "level": result["severity"]["level"],
-                "level_name": result["severity"]["name"],
-                "machine_id": result["machine_id"],
-                "defect": defect_class,
-                "confidence": confidence,
-                "action": result["severity"]["action"],
-                "root_cause": (
-                    result["root_cause"]["cause"]
-                    if result.get("root_cause")
-                    else None
-                ),
-                "fix": (
-                    result["root_cause"]["action"]
-                    if result.get("root_cause")
-                    else None
-                ),
-                "inspection_id": result[
-                    "inspection_id"
-                ],
-                "timestamp": result["timestamp"],
-            }
-
-            r.lpush(
-                "fabriguard:alert_history",
-                json.dumps(alert_payload),
-            )
-
-            r.ltrim(
-                "fabriguard:alert_history",
-                0,
-                49,
-            )
 
     except Exception as e:
         db.rollback()

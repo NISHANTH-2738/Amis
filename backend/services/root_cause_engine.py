@@ -76,6 +76,44 @@ CAUSE_RULES = {
     ],
 }
 
+DEFAULT_CAUSES = {
+    "hole": {
+        "cause": "Needle damage or yarn break at stitch formation",
+        "operator_action": "Stop affected roll, mark defect zone, inspect needle path",
+        "maintenance_action": "Replace needle and check yarn guide alignment",
+    },
+    "stain": {
+        "cause": "Oil leakage or contaminated fabric path",
+        "operator_action": "Segregate stained material and clean contact rollers",
+        "maintenance_action": "Inspect oil seals, lubrication points, and drip guards",
+    },
+    "needle_line": {
+        "cause": "Bent or worn needle creating repeated line defect",
+        "operator_action": "Pause line and inspect needle bed section",
+        "maintenance_action": "Replace worn needle and verify machine vibration",
+    },
+    "drop_stitch": {
+        "cause": "Yarn tension instability or missed stitch formation",
+        "operator_action": "Review affected fabric and reduce line speed",
+        "maintenance_action": "Recalibrate yarn tension and inspect feeders",
+    },
+    "run_ladder": {
+        "cause": "Chain stitch failure caused by tension spike",
+        "operator_action": "Isolate fabric roll and inspect recent output",
+        "maintenance_action": "Adjust tension and inspect take-down rollers",
+    },
+    "pilling": {
+        "cause": "Surface abrasion or yarn quality variation",
+        "operator_action": "Flag roll for quality review",
+        "maintenance_action": "Check fabric handling path for abrasion points",
+    },
+    "unknown_anomaly": {
+        "cause": "Unclassified visual anomaly",
+        "operator_action": "Manual quality inspection required",
+        "maintenance_action": "Review machine state and sample image",
+    },
+}
+
 
 class RootCauseEngine:
     def analyse(self, defect_class: str, machine_id: str, sensor_state: dict | None = None) -> dict:
@@ -83,6 +121,7 @@ class RootCauseEngine:
             machine_id,
             {"tool_age_days": 0, "vibration": 1.0, "tension_kn": 4.2, "temperature_c": 58},
         )
+        default = DEFAULT_CAUSES.get(defect_class, DEFAULT_CAUSES["unknown_anomaly"])
         matched = []
         for rule in CAUSE_RULES.get(defect_class, []):
             if rule["condition"](state):
@@ -90,14 +129,18 @@ class RootCauseEngine:
                     {
                         "cause": rule["cause"],
                         "action": rule["action"],
+                        "operator_action": default["operator_action"],
+                        "maintenance_action": rule["action"],
                         "confidence": rule["confidence"],
                     }
                 )
 
         if not matched:
             return {
-                "cause": "Unknown; no sensor correlation found",
-                "action": "Manual inspection required",
+                "cause": default["cause"],
+                "action": default["operator_action"],
+                "operator_action": default["operator_action"],
+                "maintenance_action": default["maintenance_action"],
                 "confidence": 0.0,
                 "machine_id": machine_id,
                 "machine_state": state,

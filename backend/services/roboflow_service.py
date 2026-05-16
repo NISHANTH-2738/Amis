@@ -33,14 +33,16 @@ ROBOFLOW_WORKSPACE_NAME = os.getenv("ROBOFLOW_WORKSPACE_NAME")
 ROBOFLOW_WORKFLOW_ID = os.getenv("ROBOFLOW_WORKFLOW_ID")
 ROBOFLOW_WORKFLOW_IMAGE_KEY = os.getenv("ROBOFLOW_WORKFLOW_IMAGE_KEY", "image")
 ROBOFLOW_TIMEOUT_SECONDS = float(os.getenv("ROBOFLOW_TIMEOUT_SECONDS", "8"))
+ROBOFLOW_RETRIES = int(os.getenv("ROBOFLOW_RETRIES", "2"))
 ROBOFLOW_CONFIDENCE_THRESHOLD = float(os.getenv("ROBOFLOW_CONFIDENCE_THRESHOLD", "0.35"))
 ROBOFLOW_MAX_IMAGE_SIZE = int(os.getenv("ROBOFLOW_MAX_IMAGE_SIZE", "640"))
 ROBOFLOW_JPEG_QUALITY = int(os.getenv("ROBOFLOW_JPEG_QUALITY", "72"))
 ROBOFLOW_CACHE_SIZE = int(os.getenv("ROBOFLOW_CACHE_SIZE", "128"))
+NON_DEFECT_CLASSES = {"normal", "pass", "ok", "good", "no_defect", "no defect", "background"}
 
 _client = None
 _cache: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
-_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="roboflow")
+_executor: ThreadPoolExecutor | None = None
 
 
 @dataclass(frozen=True)
@@ -73,6 +75,13 @@ def _get_client():
 
     _client = InferenceHTTPClient(api_url=ROBOFLOW_API_URL, api_key=ROBOFLOW_API_KEY)
     return _client
+
+
+def _get_executor() -> ThreadPoolExecutor:
+    global _executor
+    if _executor is None:
+        _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="roboflow")
+    return _executor
 
 
 def _file_hash(path: str) -> str:
@@ -159,6 +168,12 @@ def _scale_bbox_to_original(prediction: dict[str, Any], prepared: PreparedImage)
     ]
 
 
+def _has_detection_box(prediction: dict[str, Any]) -> bool:
+    width = float(prediction.get("width", 0.0) or 0.0)
+    height = float(prediction.get("height", 0.0) or 0.0)
+    return width > 1.0 and height > 1.0
+
+
 def _collect_predictions(result: Any) -> list[dict[str, Any]]:
     """Find detection-like prediction lists in Roboflow model or workflow output."""
     if isinstance(result, list):
@@ -184,17 +199,36 @@ def _standardize_predictions(result: Any, prepared: PreparedImage) -> list[dict[
     predictions = _collect_predictions(result)
     detections = []
     for prediction in predictions:
+        defect_class = str(
+            prediction.get("class") or prediction.get("class_name") or "unknown_anomaly"
+        ).strip()
+        if defect_class.lower() in NON_DEFECT_CLASSES:
+            continue
+        if not _has_detection_box(prediction):
+            continue
+
         confidence = float(prediction.get("confidence", 0.0))
         if confidence < ROBOFLOW_CONFIDENCE_THRESHOLD:
             continue
         detections.append(
             {
-                "class": str(prediction.get("class") or prediction.get("class_name") or "unknown_anomaly"),
+                "class": defect_class,
                 "confidence": round(confidence, 4),
                 "bbox": _scale_bbox_to_original(prediction, prepared),
             }
         )
     return detections
+
+
+def _run_inference(client: Any, prepared_path: str) -> Any:
+    if ROBOFLOW_WORKSPACE_NAME and ROBOFLOW_WORKFLOW_ID:
+        return client.run_workflow(
+            workspace_name=ROBOFLOW_WORKSPACE_NAME,
+            workflow_id=ROBOFLOW_WORKFLOW_ID,
+            images={ROBOFLOW_WORKFLOW_IMAGE_KEY: prepared_path},
+            use_cache=True,
+        )
+    return client.infer(prepared_path, model_id=ROBOFLOW_MODEL_ID)
 
 
 def detect_defects(image_path: str) -> list[dict[str, Any]]:
@@ -217,17 +251,20 @@ def detect_defects(image_path: str) -> list[dict[str, Any]]:
 
         prepared = _prepare_image(image_path)
         try:
-            if ROBOFLOW_WORKSPACE_NAME and ROBOFLOW_WORKFLOW_ID:
-                future = _executor.submit(
-                    client.run_workflow,
-                    workspace_name=ROBOFLOW_WORKSPACE_NAME,
-                    workflow_id=ROBOFLOW_WORKFLOW_ID,
-                    images={ROBOFLOW_WORKFLOW_IMAGE_KEY: prepared.path},
-                    use_cache=True,
-                )
+            last_error: Exception | None = None
+            for attempt in range(ROBOFLOW_RETRIES + 1):
+                try:
+                    future = _get_executor().submit(_run_inference, client, prepared.path)
+                    result = future.result(timeout=ROBOFLOW_TIMEOUT_SECONDS)
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    if attempt >= ROBOFLOW_RETRIES:
+                        raise
+                    time.sleep(0.25 * (attempt + 1))
             else:
-                future = _executor.submit(client.infer, prepared.path, model_id=ROBOFLOW_MODEL_ID)
-            result = future.result(timeout=ROBOFLOW_TIMEOUT_SECONDS)
+                raise last_error or RuntimeError("Roboflow inference failed")
+
             detections = _standardize_predictions(result, prepared)
             _cache_set(key, detections)
             LOGGER.info("Roboflow inference completed in %.0fms", (time.perf_counter() - started) * 1000)
