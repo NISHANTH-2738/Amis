@@ -76,6 +76,7 @@ export function normalizeDetection(payload: any): DefectDetection {
     : null;
   const anomalyOnly = payload.anomaly?.is_anomaly || payload.severity?.defect === "sensor_anomaly";
   const defect = visualDefect ?? predictionDefect ?? (payload.status === "PASS" ? "normal" : anomalyOnly ? "sensor_anomaly" : "unknown_anomaly");
+  const confidence = payload.confidence ?? payload.defects?.[0]?.confidence ?? payload.prediction?.confidence ?? (payload.status === "PASS" ? 1 : 0);
   const severityName = String(payload.severity?.name ?? payload.severity ?? payload.severity_name ?? payload.level_name ?? "MONITOR").toUpperCase();
   const bbox = payload.bbox ?? payload.defects?.[0]?.bbox;
   const fallback = fallbackBbox(id);
@@ -87,7 +88,7 @@ export function normalizeDetection(payload: any): DefectDetection {
     machine: payload.machine ?? payload.machine_id ?? "M-00",
     product: payload.product ?? "Live production batch",
     defect,
-    confidence: boundedPercent(payload.confidence ?? payload.defects?.[0]?.confidence, 0.72),
+    confidence: boundedPercent(confidence, payload.status === "PASS" ? 1 : 0),
     severity: severityMap[severityName] ?? "advisory",
     status: payload.status === "PASS" ? "approved" : "new",
     bbox: bbox ? normalizeBbox(bbox, fallback, payload.image) : { x: 0, y: 0, width: 0, height: 0 },
