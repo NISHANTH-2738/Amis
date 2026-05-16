@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -360,21 +360,91 @@ function ResultMetric({ label, value }: { label: string; value: string }) {
 }
 
 function LiveCamera({ detections, detailed = false, imageUrl }: { detections: DefectDetection[]; detailed?: boolean; imageUrl?: string }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const [imageFrame, setImageFrame] = useState({ left: 0, top: 0, width: 100, height: 100 });
   const active = detections[0];
   const bbox = active?.bbox ?? { x: 42, y: 28, width: 18, height: 24 };
+  const showBox = Boolean(active && !["normal", "pass", "none"].includes(active.defect.toLowerCase()));
+  const overlay = imageUrl
+    ? {
+        left: `${imageFrame.left + (bbox.x * imageFrame.width) / 100}%`,
+        top: `${imageFrame.top + (bbox.y * imageFrame.height) / 100}%`,
+        width: `${(bbox.width * imageFrame.width) / 100}%`,
+        height: `${(bbox.height * imageFrame.height) / 100}%`,
+      }
+    : { left: `${bbox.x}%`, top: `${bbox.y}%`, width: `${bbox.width}%`, height: `${bbox.height}%` };
+
+  useEffect(() => {
+    if (!imageUrl) {
+      setImageFrame({ left: 0, top: 0, width: 100, height: 100 });
+      return;
+    }
+
+    const updateFrame = () => {
+      const container = containerRef.current;
+      const image = imageRef.current;
+      if (!container || !image || !image.naturalWidth || !image.naturalHeight) return;
+
+      const containerWidth = container.clientWidth;
+      const containerHeight = container.clientHeight;
+      const imageRatio = image.naturalWidth / image.naturalHeight;
+      const containerRatio = containerWidth / containerHeight;
+
+      let renderedWidth = containerWidth;
+      let renderedHeight = containerHeight;
+      if (imageRatio > containerRatio) {
+        renderedHeight = containerWidth / imageRatio;
+      } else {
+        renderedWidth = containerHeight * imageRatio;
+      }
+
+      setImageFrame({
+        left: ((containerWidth - renderedWidth) / 2 / containerWidth) * 100,
+        top: ((containerHeight - renderedHeight) / 2 / containerHeight) * 100,
+        width: (renderedWidth / containerWidth) * 100,
+        height: (renderedHeight / containerHeight) * 100,
+      });
+    };
+
+    updateFrame();
+    const observer = new ResizeObserver(updateFrame);
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [imageUrl]);
+
   return (
     <div>
-      <div className={cn("relative overflow-hidden rounded-md border border-slate-700 bg-slate-950 grid-bg", detailed ? "h-[470px]" : "h-[390px]")}>
+      <div ref={containerRef} className={cn("relative overflow-hidden rounded-md border border-slate-700 bg-slate-950 grid-bg", detailed ? "h-[470px]" : "h-[390px]")}>
         <div className="absolute inset-y-0 w-1/3 scanline" />
         {imageUrl ? (
-          <img src={imageUrl} alt="Uploaded fabric inspection preview" className="absolute inset-0 h-full w-full object-contain" />
+          <img ref={imageRef} src={imageUrl} alt="Uploaded fabric inspection preview" className="absolute inset-0 h-full w-full object-contain" onLoad={() => {
+            const image = imageRef.current;
+            if (!image) return;
+            const container = containerRef.current;
+            if (!container || !image.naturalWidth || !image.naturalHeight) return;
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+            const imageRatio = image.naturalWidth / image.naturalHeight;
+            const containerRatio = containerWidth / containerHeight;
+            let renderedWidth = containerWidth;
+            let renderedHeight = containerHeight;
+            if (imageRatio > containerRatio) renderedHeight = containerWidth / imageRatio;
+            else renderedWidth = containerHeight * imageRatio;
+            setImageFrame({
+              left: ((containerWidth - renderedWidth) / 2 / containerWidth) * 100,
+              top: ((containerHeight - renderedHeight) / 2 / containerHeight) * 100,
+              width: (renderedWidth / containerWidth) * 100,
+              height: (renderedHeight / containerHeight) * 100,
+            });
+          }} />
         ) : (
           <div className="absolute left-[8%] top-[14%] h-[72%] w-[84%] rounded border border-slate-700 bg-slate-900/70" />
         )}
-        {active ? (
+        {showBox ? (
           <div
             className="absolute border-2 border-red-400 bg-red-500/10"
-            style={{ left: `${bbox.x}%`, top: `${bbox.y}%`, width: `${bbox.width}%`, height: `${bbox.height}%` }}
+            style={overlay}
           >
             <div className="absolute -top-7 left-0 whitespace-nowrap rounded bg-red-500 px-2 py-1 text-xs font-semibold text-white">
               {active.defect} {formatPercent(active.confidence)}
