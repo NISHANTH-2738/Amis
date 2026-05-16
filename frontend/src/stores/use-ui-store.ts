@@ -22,7 +22,7 @@ export const useUiStore = create<UiState>()(
     (set) => ({
       role: "operator",
       page: "dashboard",
-      useMock: true,
+      useMock: false,
       density: "compact",
       search: "",
       setRole: (role) => set({ role, page: "dashboard" }),

@@ -8,7 +8,7 @@ from ai_core.inference.yolo_detector import model_status, reload_model
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import json, uuid
+import json, uuid, importlib
 from datetime import datetime
 
 from backend.services.inspection_pipeline  import run_inspection
@@ -22,10 +22,21 @@ from backend.database.connection           import (
     create_tables, SessionLocal
 )
 from backend.database.models               import (
-    Inspection, Alert
+    Inspection
 )
-METRICS_PATH = "ai_core/models/fabriguard_v1/metrics_report.json"
 
+def _get_alert_model():
+    try:
+        from backend.database.models import Alert
+    except ImportError:
+        return importlib.import_module(
+            "backend.database.models.alert"
+        ).Alert
+    return Alert
+
+Alert = _get_alert_model()
+
+METRICS_PATH = "ai_core/models/fabriguard_v1/metrics_report.json"
 # ── APP SETUP ────────────────────────────────────────
 app = FastAPI(
     title="FabriGuard API",
@@ -40,6 +51,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup():
+    create_tables()
 # ── WEBSOCKET MANAGER ────────────────────────────────
 class ConnectionManager:
     def __init__(self):
@@ -72,8 +86,8 @@ manager = ConnectionManager()
 @app.on_event("startup")
 async def startup():
     create_tables()
-    print("✅ FabriGuard API started")
-    print("📊 Docs: http://localhost:8000/docs")
+    print("FabriGuard API started")
+    print("Docs: http://localhost:8000/docs")
 
 # ── HEALTH CHECK ─────────────────────────────────────
 @app.get("/")

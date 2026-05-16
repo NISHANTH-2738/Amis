@@ -1,6 +1,77 @@
 import { alerts, detections, machines, sensors, trends } from "@/lib/mock-data";
+import type { AlertEvent, DefectDetection, Severity } from "@/types/fabriguard";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
+const severityMap: Record<string, Severity> = {
+  PASS: "normal",
+  MONITOR: "advisory",
+  REVIEW: "warning",
+  ALERT: "warning",
+  ISOLATE: "critical",
+  STOP: "critical",
+  REJECT: "critical",
+};
+
+function boundedPercent(value: unknown, fallback: number) {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(0.05, Math.min(0.98, Math.abs(numeric)));
+}
+
+function fallbackBbox(seed: string) {
+  const total = [...seed].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return {
+    x: 12 + (total % 54),
+    y: 16 + (total % 42),
+    width: 10 + (total % 14),
+    height: 10 + (total % 18),
+  };
+}
+
+export function normalizeDetection(payload: any): DefectDetection {
+  const id = String(payload.id ?? payload.inspection_id ?? crypto.randomUUID());
+  const defect = payload.defect ?? payload.defect_class ?? payload.prediction?.class ?? "sensor_anomaly";
+  const severityName = String(payload.severity ?? payload.severity_name ?? payload.level_name ?? "MONITOR").toUpperCase();
+  const bbox = payload.bbox ?? payload.defects?.[0]?.bbox ?? fallbackBbox(id);
+
+  return {
+    id,
+    timestamp: payload.timestamp ?? new Date().toISOString(),
+    line: payload.line ?? `Line ${String(payload.machine_id ?? payload.machine ?? "M-00").slice(-1)}`,
+    machine: payload.machine ?? payload.machine_id ?? "M-00",
+    product: payload.product ?? "Live production batch",
+    defect,
+    confidence: boundedPercent(payload.confidence ?? payload.defects?.[0]?.confidence, 0.72),
+    severity: severityMap[severityName] ?? "advisory",
+    status: payload.status === "PASS" ? "approved" : "new",
+    bbox: {
+      x: Number(bbox.x ?? bbox.left ?? fallbackBbox(id).x),
+      y: Number(bbox.y ?? bbox.top ?? fallbackBbox(id).y),
+      width: Number(bbox.width ?? bbox.w ?? fallbackBbox(id).width),
+      height: Number(bbox.height ?? bbox.h ?? fallbackBbox(id).height),
+    },
+    imageUrl: payload.imageUrl ?? "",
+    explanation: payload.explanation ?? payload.root_cause ?? payload.action ?? "Live inspection event from FabriGuard backend.",
+    operator: payload.operator,
+  };
+}
+
+export function normalizeAlert(payload: any): AlertEvent {
+  const id = String(payload.id ?? payload.alert_id ?? payload.inspection_id ?? crypto.randomUUID());
+  const severityName = String(payload.severity ?? payload.level_name ?? payload.alert_name ?? "warning").toUpperCase();
+  const severity = severityMap[severityName] === "normal" ? "advisory" : severityMap[severityName] ?? "warning";
+
+  return {
+    id,
+    timestamp: payload.timestamp ?? new Date().toISOString(),
+    title: payload.title ?? `${payload.defect ?? payload.defect_class ?? "Inspection"} alert`,
+    message: payload.message ?? payload.action ?? payload.fix ?? "Operator review required.",
+    severity: severity as AlertEvent["severity"],
+    area: payload.area ?? payload.machine_id ?? payload.machine ?? "Production",
+    acknowledged: Boolean(payload.acknowledged),
+  };
+}
 
 async function getJson<T>(path: string, fallback: T, useMock: boolean): Promise<T> {
   if (useMock) return fallback;
@@ -14,8 +85,14 @@ async function getJson<T>(path: string, fallback: T, useMock: boolean): Promise<
 }
 
 export const fabriGuardApi = {
-  detections: (useMock: boolean) => getJson("/inspections/recent?count=30", detections, useMock),
-  alerts: (useMock: boolean) => getJson("/alerts/recent?count=20", alerts, useMock),
+  detections: async (useMock: boolean) => {
+    const rows = await getJson<any[]>("/inspections/recent?count=30", detections, useMock);
+    return rows.map(normalizeDetection);
+  },
+  alerts: async (useMock: boolean) => {
+    const rows = await getJson<any[]>("/alerts/recent?count=20", alerts, useMock);
+    return rows.map(normalizeAlert);
+  },
   sensors: (useMock: boolean) => getJson("/machines/status", sensors, useMock),
   machines: (useMock: boolean) => getJson("/machines/status", machines, useMock),
   modelStatus: (useMock: boolean) =>

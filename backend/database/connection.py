@@ -1,29 +1,23 @@
-# backend/database/connection.py
-import os
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from backend.database.models import Base
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://amis_user:amis_pass@localhost:5432/amis_db"
+DATABASE_URL = "sqlite:///./fabriguard.db"
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False},
 )
 
-engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
-    bind=engine
+    bind=engine,
 )
 
-def create_tables():
-    Base.metadata.create_all(bind=engine)
-    print("✅ Database tables created")
+Base = declarative_base()
+from backend.database import models
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-        
+def create_tables():
+    print("Creating database tables...")
+    Base.metadata.create_all(bind=engine)
+    print("Database tables created successfully.")

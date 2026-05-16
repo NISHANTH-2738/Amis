@@ -1,65 +1,233 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fabriGuardApi } from "@/lib/api";
-import { alerts as mockAlerts, detections as mockDetections } from "@/lib/mock-data";
-import type { AlertEvent, DefectDetection } from "@/types/fabriguard";
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws/dashboard";
+import {
+  fabriGuardApi,
+  normalizeAlert,
+  normalizeDetection,
+} from "@/lib/api";
+
+import {
+  alerts as mockAlerts,
+  detections as mockDetections,
+} from "@/lib/mock-data";
+
+import type {
+  AlertEvent,
+  DefectDetection,
+} from "@/types/fabriguard";
+
+const WS_URL =
+  process.env.NEXT_PUBLIC_WS_URL ??
+  "ws://127.0.0.1:8000/ws/dashboard";
 
 export function useLiveFabriGuard(useMock: boolean) {
-  const [socketState, setSocketState] = useState<"mock" | "connecting" | "live" | "offline">(
-    useMock ? "mock" : "connecting",
+  const [socketState, setSocketState] = useState<
+    "mock" | "connecting" | "live" | "offline"
+  >(useMock ? "mock" : "connecting");
+
+  const [liveDetections, setLiveDetections] = useState<
+    DefectDetection[]
+  >([]);
+
+  const [liveAlerts, setLiveAlerts] = useState<
+    AlertEvent[]
+  >([]);
+
+  // -----------------------------------------
+  // Reconnect Timer
+  // -----------------------------------------
+
+  const reconnectRef = useRef<NodeJS.Timeout | null>(
+    null,
   );
-  const [liveDetections, setLiveDetections] = useState<DefectDetection[]>([]);
-  const [liveAlerts, setLiveAlerts] = useState<AlertEvent[]>([]);
+
+  // -----------------------------------------
+  // React Query Fallback APIs
+  // -----------------------------------------
 
   const detectionsQuery = useQuery({
     queryKey: ["detections", useMock],
-    queryFn: () => fabriGuardApi.detections(useMock),
+
+    queryFn: () =>
+      fabriGuardApi.detections(useMock),
+
     refetchInterval: useMock ? 30_000 : 60_000,
   });
 
   const alertsQuery = useQuery({
     queryKey: ["alerts", useMock],
-    queryFn: () => fabriGuardApi.alerts(useMock),
+
+    queryFn: () =>
+      fabriGuardApi.alerts(useMock),
+
     refetchInterval: useMock ? 30_000 : 60_000,
   });
+
+  // -----------------------------------------
+  // WebSocket Logic
+  // -----------------------------------------
 
   useEffect(() => {
     if (useMock) {
       setSocketState("mock");
       return;
     }
-    setSocketState("connecting");
-    const ws = new WebSocket(WS_URL);
-    ws.onopen = () => setSocketState("live");
-    ws.onerror = () => setSocketState("offline");
-    ws.onclose = () => setSocketState("offline");
-    ws.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload.type === "inspection") {
-          setLiveDetections((current) => [payload as DefectDetection, ...current].slice(0, 50));
+
+    let ws: WebSocket;
+    let shouldReconnect = true;
+
+    const connectWebSocket = () => {
+      console.log(
+        "Connecting to WebSocket:",
+        WS_URL,
+      );
+
+      setSocketState("connecting");
+
+      ws = new WebSocket(WS_URL);
+
+      // -------------------------------------
+      // Connected
+      // -------------------------------------
+
+      ws.onopen = () => {
+        console.log(
+          "WebSocket connected successfully",
+        );
+
+        setSocketState("live");
+      };
+
+      // -------------------------------------
+      // Messages
+      // -------------------------------------
+
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+
+          // -------------------------------
+          // Inspection Events
+          // -------------------------------
+
+          if (payload.type === "inspection") {
+            setLiveDetections((current) =>
+              [
+                normalizeDetection(payload),
+                ...current,
+              ].slice(0, 50),
+            );
+          }
+
+          // -------------------------------
+          // Alert Events
+          // -------------------------------
+
+          if (payload.type === "alert") {
+            setLiveAlerts((current) =>
+              [
+                normalizeAlert(payload),
+                ...current,
+              ].slice(0, 50),
+            );
+          }
+        } catch (err) {
+          console.warn(
+            "WebSocket parse error:",
+            err,
+          );
+
+          setSocketState("offline");
         }
-        if (payload.type === "alert") {
-          setLiveAlerts((current) => [payload as AlertEvent, ...current].slice(0, 50));
-        }
-      } catch {
+      };
+
+      // -------------------------------------
+      // Errors
+      // -------------------------------------
+
+      ws.onerror = (err) => {
+        console.warn(
+          "WebSocket connection error:",
+          err,
+        );
+
         setSocketState("offline");
+      };
+
+      // -------------------------------------
+      // Closed
+      // -------------------------------------
+
+      ws.onclose = () => {
+        if (!shouldReconnect) return;
+
+        setSocketState("offline");
+
+        reconnectRef.current = setTimeout(() => {
+          connectWebSocket();
+        }, 3000);
+      };
+    };
+
+    // Initial Connection
+    connectWebSocket();
+
+    // -----------------------------------------
+    // Cleanup
+    // -----------------------------------------
+
+    return () => {
+      console.log(
+        "Cleaning up WebSocket connection",
+      );
+
+      shouldReconnect = false;
+
+      if (reconnectRef.current) {
+        clearTimeout(reconnectRef.current);
+      }
+
+      if (ws) {
+        ws.close();
       }
     };
-    return () => ws.close();
   }, [useMock]);
+
+  // -----------------------------------------
+  // Final Combined Data
+  // -----------------------------------------
 
   return useMemo(
     () => ({
       socketState,
-      detections: [...liveDetections, ...(detectionsQuery.data ?? mockDetections)],
-      alerts: [...liveAlerts, ...(alertsQuery.data ?? mockAlerts)],
-      isLoading: detectionsQuery.isLoading || alertsQuery.isLoading,
+
+      detections: [
+        ...liveDetections,
+        ...(detectionsQuery.data ??
+          mockDetections),
+      ],
+
+      alerts: [
+        ...liveAlerts,
+        ...(alertsQuery.data ?? mockAlerts),
+      ],
+
+      isLoading:
+        detectionsQuery.isLoading ||
+        alertsQuery.isLoading,
     }),
-    [alertsQuery.data, alertsQuery.isLoading, detectionsQuery.data, detectionsQuery.isLoading, liveAlerts, liveDetections, socketState],
+
+    [
+      alertsQuery.data,
+      alertsQuery.isLoading,
+      detectionsQuery.data,
+      detectionsQuery.isLoading,
+      liveAlerts,
+      liveDetections,
+      socketState,
+    ],
   );
 }

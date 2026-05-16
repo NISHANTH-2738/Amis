@@ -1,9 +1,11 @@
 .env
 venv/
+venv*/
 __pycache__/
 *.pyc
 .DS_Store
-<<<<<<< HEAD
+*.log
+*.db
 ai_core/data/raw/
 ai_core/data/processed/
 ai_core/data/augmented/

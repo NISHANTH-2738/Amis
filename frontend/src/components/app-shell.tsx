@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -67,7 +67,7 @@ export function AppShell() {
 
   return (
     <main className="min-h-screen bg-[#080b10] text-slate-100">
-      <div className="grid min-h-screen grid-cols-[260px_1fr]">
+      <div className="grid min-h-screen grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)]">
         <aside className="border-r border-slate-800 bg-[#0b1017]">
           <div className="flex h-16 items-center gap-3 border-b border-slate-800 px-5">
             <div className="grid h-9 w-9 place-items-center rounded-md border border-sky-500/40 bg-sky-500/10">
@@ -86,7 +86,7 @@ export function AppShell() {
                   key={item}
                   onClick={() => setRole(item)}
                   className={cn(
-                    "rounded px-2 py-2 text-xs font-semibold text-slate-500",
+                    "rounded px-1.5 py-2 text-[11px] font-semibold text-slate-500 xl:px-2 xl:text-xs",
                     role === item && "bg-slate-800 text-slate-100",
                   )}
                 >
@@ -117,7 +117,7 @@ export function AppShell() {
         </aside>
 
         <section className="min-w-0">
-          <header className="flex h-16 items-center justify-between border-b border-slate-800 bg-[#0b1017]/95 px-5">
+          <header className="flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-[#0b1017]/95 px-5 py-3">
             <div>
               <div className="text-xs uppercase tracking-[0.2em] text-slate-500">{roleLabels[role]} Mode</div>
               <h1 className="text-lg font-semibold">{currentPage.label}</h1>
@@ -129,7 +129,7 @@ export function AppShell() {
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search defects, machines, alerts"
-                  className="h-9 w-72 rounded-md border border-slate-800 bg-slate-950 pl-9 pr-3 text-sm outline-none focus:border-sky-500"
+                  className="h-9 w-52 rounded-md border border-slate-800 bg-slate-950 pl-9 pr-3 text-sm outline-none focus:border-sky-500 xl:w-72"
                 />
               </label>
               <button
@@ -173,6 +173,16 @@ export function AppShell() {
   );
 }
 
+function RelativeTime({ timestamp }: { timestamp: string }) {
+  const [label, setLabel] = useState("--");
+
+  useEffect(() => {
+    setLabel(timeAgo(timestamp));
+  }, [timestamp]);
+
+  return <span suppressHydrationWarning>{label}</span>;
+}
+
 function RoleDashboard({
   role,
   detections,
@@ -187,10 +197,10 @@ function RoleDashboard({
   if (role === "operator") {
     return (
       <div className="space-y-5">
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-5 gap-2 xl:gap-3">
           {operatorKpis.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} large />)}
         </div>
-        <div className="grid grid-cols-[1.4fr_0.9fr] gap-4">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_0.9fr]">
           <LiveCamera detections={detections} />
           <AlertRail alerts={alerts} />
         </div>
@@ -202,12 +212,12 @@ function RoleDashboard({
   if (role === "supervisor") {
     return (
       <div className="space-y-5">
-        <div className="grid grid-cols-4 gap-3">{supervisorKpis.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}</div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{supervisorKpis.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}</div>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <TrendPanel title="Defect Trends" metric="defects" />
           <LineComparison />
         </div>
-        <div className="grid grid-cols-[1.2fr_0.8fr] gap-4">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
           <DefectTable detections={detections} onReview={onReview} />
           <AlertRail alerts={alerts} />
         </div>
@@ -217,8 +227,8 @@ function RoleDashboard({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-4 gap-3">{executiveKpis.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}</div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{executiveKpis.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}</div>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <TrendPanel title="Defect Reduction" metric="defects" />
         <TrendPanel title="Production Efficiency" metric="throughput" />
         <ExecutiveImpact />
@@ -231,7 +241,7 @@ function RoleDashboard({
 function LiveMonitoring({ detections, onReview }: { detections: DefectDetection[]; onReview: (detection: DefectDetection) => void }) {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-[1.45fr_0.8fr] gap-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.45fr_0.8fr]">
         <LiveCamera detections={detections} detailed />
         <div className="space-y-4">
           <InferenceStream detections={detections} />
@@ -245,6 +255,7 @@ function LiveMonitoring({ detections, onReview }: { detections: DefectDetection[
 
 function LiveCamera({ detections, detailed = false }: { detections: DefectDetection[]; detailed?: boolean }) {
   const active = detections[0];
+  const bbox = active?.bbox ?? { x: 42, y: 28, width: 18, height: 24 };
   return (
     <section className="industrial-panel rounded-md p-4">
       <SectionTitle eyebrow="Live Cell View" title="Camera Feed / AI Bounding Boxes" right={<StatusPill severity="normal" label="streaming" />} />
@@ -254,7 +265,7 @@ function LiveCamera({ detections, detailed = false }: { detections: DefectDetect
         {active ? (
           <div
             className="absolute border-2 border-red-400 bg-red-500/10"
-            style={{ left: `${active.bbox.x}%`, top: `${active.bbox.y}%`, width: `${active.bbox.width}%`, height: `${active.bbox.height}%` }}
+            style={{ left: `${bbox.x}%`, top: `${bbox.y}%`, width: `${bbox.width}%`, height: `${bbox.height}%` }}
           >
             <div className="absolute -top-7 left-0 whitespace-nowrap rounded bg-red-500 px-2 py-1 text-xs font-semibold text-white">
               {active.defect} {formatPercent(active.confidence)}
@@ -305,10 +316,10 @@ function DefectTable({
             </tr>
           </thead>
           <tbody>
-            {filtered.map((row) => (
-              <tr key={row.id} className={cn("border-b border-slate-800/80 hover:bg-slate-900/70", row.severity === "critical" && "bg-red-500/5")}>
+            {filtered.map((row, index) => (
+              <tr key={`${row.id}-${row.timestamp}-${index}`} className={cn("border-b border-slate-800/80 hover:bg-slate-900/70", row.severity === "critical" && "bg-red-500/5")}>
                 <td className={cn("px-3 font-mono text-sky-200", density === "compact" ? "py-2" : "py-3")}>{row.id}</td>
-                <td className="px-3 text-slate-400">{timeAgo(row.timestamp)}</td>
+                <td className="px-3 text-slate-400"><RelativeTime timestamp={row.timestamp} /></td>
                 <td className="px-3">{row.line}</td>
                 <td className="px-3">{row.machine}</td>
                 <td className="px-3 font-semibold">{row.defect}</td>
@@ -332,11 +343,11 @@ function AlertRail({ alerts }: { alerts: ReturnType<typeof useLiveFabriGuard>["a
     <section className="industrial-panel rounded-md p-4">
       <SectionTitle eyebrow="Priority Queue" title="Live Alerts" />
       <div className="space-y-3">
-        {alerts.slice(0, 5).map((alert) => (
-          <div key={alert.id} className="rounded-md border border-slate-800 bg-slate-950 p-3">
+        {alerts.slice(0, 5).map((alert, index) => (
+          <div key={`${alert.id}-${alert.timestamp}-${index}`} className="rounded-md border border-slate-800 bg-slate-950 p-3">
             <div className="mb-2 flex items-center justify-between gap-3">
               <StatusPill severity={alert.severity} label={alert.severity} />
-              <span className="text-xs text-slate-500">{timeAgo(alert.timestamp)}</span>
+              <span className="text-xs text-slate-500"><RelativeTime timestamp={alert.timestamp} /></span>
             </div>
             <div className="text-sm font-semibold">{alert.title}</div>
             <div className="mt-1 text-xs leading-5 text-slate-400">{alert.message}</div>
@@ -388,8 +399,8 @@ function LineComparison() {
 function ProductionAnalytics() {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-4 gap-3">{supervisorKpis.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}</div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{supervisorKpis.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}</div>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <TrendPanel title="Throughput vs Defects" metric="throughput" />
         <LineComparison />
       </div>
@@ -401,7 +412,7 @@ function ProductionAnalytics() {
 function SensorMonitoring() {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {sensors.map((sensor) => <SensorWidget key={sensor.id} sensor={sensor} />)}
       </div>
       <TrendPanel title="Anomaly Trend" metric="anomaly" />
@@ -437,7 +448,7 @@ function MachineGrid({ executive = false }: { executive?: boolean }) {
   return (
     <section className="industrial-panel rounded-md p-4">
       <SectionTitle eyebrow={executive ? "Plant Overview" : "Machine Health"} title="Industrial Cell Status" />
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {machines.map((machine) => (
           <div key={machine.id} className="rounded-md border border-slate-800 bg-slate-950 p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -464,7 +475,7 @@ function MachineGrid({ executive = false }: { executive?: boolean }) {
 function OperatorAnalytics({ detections, onReview }: { detections: DefectDetection[]; onReview: (detection: DefectDetection) => void }) {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <TrendPanel title="Correction Statistics" metric="confidence" />
         <ExecutiveImpact />
         <section className="industrial-panel rounded-md p-4">
@@ -486,7 +497,7 @@ function OperatorAnalytics({ detections, onReview }: { detections: DefectDetecti
 
 function TrainingWorkspace() {
   return (
-    <div className="grid grid-cols-[1fr_0.8fr] gap-4">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_0.8fr]">
       <section className="industrial-panel rounded-md p-4">
         <SectionTitle eyebrow="Adaptive Learning" title="Few-Shot Product Onboarding" right={<StatusPill severity="advisory" label="20 refs needed" />} />
         <div className="grid grid-cols-4 gap-3">
@@ -521,13 +532,13 @@ function TrainingWorkspace() {
 
 function AlertsCenter({ alerts }: { alerts: ReturnType<typeof useLiveFabriGuard>["alerts"] }) {
   return (
-    <div className="grid grid-cols-[0.85fr_1.2fr] gap-4">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.85fr_1.2fr]">
       <AlertRail alerts={alerts} />
       <section className="industrial-panel rounded-md p-4">
         <SectionTitle eyebrow="Acknowledgment Workflow" title="Alert Center" />
         <div className="space-y-3">
-          {alerts.map((alert) => (
-            <div key={alert.id} className="flex items-center justify-between gap-4 rounded-md border border-slate-800 bg-slate-950 p-4">
+          {alerts.map((alert, index) => (
+            <div key={`${alert.id}-${alert.timestamp}-${index}`} className="flex items-center justify-between gap-4 rounded-md border border-slate-800 bg-slate-950 p-4">
               <div>
                 <div className="flex items-center gap-2"><StatusPill severity={alert.severity} label={alert.severity} /><span className="font-semibold">{alert.title}</span></div>
                 <p className="mt-2 text-sm text-slate-400">{alert.message}</p>
@@ -543,7 +554,7 @@ function AlertsCenter({ alerts }: { alerts: ReturnType<typeof useLiveFabriGuard>
 
 function SettingsPanel() {
   return (
-    <div className="grid grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
       {["API Connectivity", "Model Runtime", "Table Preferences", "Alert Routing", "Factory Lines", "Security Roles"].map((title) => (
         <section key={title} className="industrial-panel rounded-md p-4">
           <SectionTitle eyebrow="Configuration" title={title} />
@@ -562,8 +573,8 @@ function InferenceStream({ detections }: { detections: DefectDetection[] }) {
     <section className="industrial-panel rounded-md p-4">
       <SectionTitle eyebrow="Inference Stream" title="Recent Detections" />
       <div className="space-y-2">
-        {detections.slice(0, 5).map((detection) => (
-          <div key={detection.id} className="flex items-center justify-between rounded border border-slate-800 bg-slate-950 px-3 py-2 text-sm">
+        {detections.slice(0, 5).map((detection, index) => (
+          <div key={`${detection.id}-${detection.timestamp}-${index}`} className="flex items-center justify-between rounded border border-slate-800 bg-slate-950 px-3 py-2 text-sm">
             <span>{detection.defect}</span>
             <span className="font-mono text-sky-200">{formatPercent(detection.confidence)}</span>
           </div>

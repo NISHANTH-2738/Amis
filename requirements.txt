@@ -18,6 +18,8 @@ torchvision
 opencv-python
 pillow
 python-dotenv
+inference-sdk
+requests
 ultralytics
 albumentations
 joblib
