@@ -39,10 +39,9 @@ import { ReviewDrawer } from "@/components/review-drawer";
 import { SectionTitle, StatusPill } from "@/components/status";
 import { useLiveFabriGuard } from "@/hooks/use-live-fabriguard";
 import { fabriGuardApi, normalizeDetection } from "@/lib/api";
-import { executiveKpis, machines, operatorKpis, sensors, supervisorKpis, trends } from "@/lib/mock-data";
 import { cn, formatPercent, timeAgo } from "@/lib/utils";
 import { useUiStore } from "@/stores/use-ui-store";
-import type { DefectDetection, NavItem, PageKey, Role, SensorReading } from "@/types/fabriguard";
+import type { DefectDetection, Kpi, MachineHealth as MachineHealthType, NavItem, PageKey, Role, SensorReading, TrendPoint } from "@/types/fabriguard";
 
 const navItems: NavItem[] = [
   { key: "dashboard", label: "Main Dashboard", icon: LayoutDashboard },
@@ -63,8 +62,8 @@ const roleLabels: Record<Role, string> = {
 };
 
 export function AppShell() {
-  const { role, page, useMock, density, search, setRole, setPage, setUseMock, setDensity, setSearch } = useUiStore();
-  const { socketState, detections, alerts } = useLiveFabriGuard(useMock);
+  const { role, page, density, search, setRole, setPage, setDensity, setSearch } = useUiStore();
+  const { socketState, detections, alerts } = useLiveFabriGuard(false);
   const [uploadedDetections, setUploadedDetections] = useState<DefectDetection[]>([]);
   const [selectedDetection, setSelectedDetection] = useState<DefectDetection | null>(null);
   const currentPage = navItems.find((item) => item.key === page) ?? navItems[0];
@@ -148,12 +147,9 @@ export function AppShell() {
               >
                 <SlidersHorizontal className="h-4 w-4" />
               </button>
-              <button
-                onClick={() => setUseMock(!useMock)}
-                className={cn("rounded-md border px-3 py-2 text-xs font-semibold uppercase", useMock ? "border-amber-500/40 bg-amber-500/10 text-amber-200" : "border-emerald-500/40 bg-emerald-500/10 text-emerald-200")}
-              >
-                USE_MOCK {useMock ? "ON" : "OFF"}
-              </button>
+              <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold uppercase text-emerald-200">
+                REAL DATA
+              </div>
               <div className="flex items-center gap-2 rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-xs uppercase text-slate-400">
                 {socketState === "live" ? <Wifi className="h-4 w-4 text-emerald-300" /> : <WifiOff className="h-4 w-4 text-amber-300" />}
                 {socketState}
@@ -165,9 +161,9 @@ export function AppShell() {
             <motion.div key={`${role}-${page}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
               {page === "dashboard" && <RoleDashboard role={role} detections={visibleDetections} alerts={alerts} onReview={setSelectedDetection} onInspection={(detection) => setUploadedDetections((current) => [detection, ...current].slice(0, 12))} />}
               {page === "live" && <LiveMonitoring detections={visibleDetections} onReview={setSelectedDetection} onInspection={(detection) => setUploadedDetections((current) => [detection, ...current].slice(0, 12))} />}
-              {page === "production" && <ProductionAnalytics />}
+              {page === "production" && <ProductionAnalytics detections={visibleDetections} alerts={alerts} />}
               {page === "sensors" && <SensorMonitoring />}
-              {page === "machines" && <MachineHealth />}
+              {page === "machines" && <MachineHealth machines={[]} />}
               {page === "operators" && <OperatorAnalytics detections={visibleDetections} onReview={setSelectedDetection} />}
               {page === "training" && <TrainingWorkspace />}
               {page === "alerts" && <AlertsCenter alerts={alerts} />}
@@ -191,6 +187,58 @@ function RelativeTime({ timestamp }: { timestamp: string }) {
   return <span suppressHydrationWarning>{label}</span>;
 }
 
+function buildKpis(detections: DefectDetection[], alerts: ReturnType<typeof useLiveFabriGuard>["alerts"]) {
+  const total = detections.length;
+  const defects = detections.filter((item) => item.status !== "approved").length;
+  const avgConfidence = total
+    ? detections.reduce((sum, item) => sum + item.confidence, 0) / total
+    : 0;
+  const critical = detections.filter((item) => item.severity === "critical").length;
+  const defectRate = total ? defects / total : 0;
+
+  const operator: Kpi[] = [
+    { label: "Current Defects", value: String(defects), trend: `${alerts.length} active alerts`, severity: defects ? "warning" : "normal", helper: "Live backend inspections only" },
+    { label: "AI Status", value: "LIVE", trend: "Roboflow hosted workflow", severity: "normal", helper: "No frontend mock detections" },
+    { label: "Inspected", value: String(total), trend: "database records", severity: "advisory", helper: "Loaded from backend" },
+    { label: "Critical", value: String(critical), trend: "needs action", severity: critical ? "critical" : "normal", helper: "Severity engine output" },
+    { label: "Confidence", value: formatPercent(avgConfidence), trend: "average", severity: "advisory", helper: "Model confidence" },
+  ];
+
+  const supervisor: Kpi[] = [
+    { label: "Inspections", value: String(total), trend: "real records", severity: "advisory", helper: "SQLite backend" },
+    { label: "Defects", value: String(defects), trend: formatPercent(defectRate), severity: defects ? "warning" : "normal", helper: "Open review queue" },
+    { label: "Alerts", value: String(alerts.length), trend: "live websocket", severity: alerts.length ? "warning" : "normal", helper: "Unmocked alert stream" },
+    { label: "Critical", value: String(critical), trend: "stop risk", severity: critical ? "critical" : "normal", helper: "Severity engine" },
+  ];
+
+  const executive: Kpi[] = [
+    { label: "Quality Rate", value: formatPercent(1 - defectRate), trend: "from inspections", severity: defectRate > 0.1 ? "warning" : "normal", helper: "Live database" },
+    { label: "AI Uptime", value: "LIVE", trend: "backend connected", severity: "normal", helper: "WebSocket and REST" },
+    { label: "Alerts", value: String(alerts.length), trend: "plant risk", severity: alerts.length ? "warning" : "normal", helper: "Realtime alerts" },
+    { label: "Critical", value: String(critical), trend: "line impact", severity: critical ? "critical" : "normal", helper: "Emergency count" },
+  ];
+
+  return { operator, supervisor, executive };
+}
+
+function buildTrends(detections: DefectDetection[]): TrendPoint[] {
+  const buckets = new Map<string, TrendPoint>();
+  for (const item of detections) {
+    const date = new Date(item.timestamp);
+    const time = Number.isNaN(date.getTime()) ? "Live" : `${String(date.getHours()).padStart(2, "0")}:00`;
+    const current = buckets.get(time) ?? { time, defects: 0, throughput: 0, confidence: 0, anomaly: 0 };
+    current.throughput += 1;
+    current.defects += item.status !== "approved" ? 1 : 0;
+    current.confidence += item.confidence;
+    current.anomaly += item.severity === "critical" ? 1 : item.severity === "warning" ? 0.5 : 0;
+    buckets.set(time, current);
+  }
+  return Array.from(buckets.values()).map((item) => ({
+    ...item,
+    confidence: item.throughput ? Math.round((item.confidence / item.throughput) * 100) : 0,
+  }));
+}
+
 function RoleDashboard({
   role,
   detections,
@@ -204,11 +252,12 @@ function RoleDashboard({
   onReview: (detection: DefectDetection) => void;
   onInspection: (detection: DefectDetection) => void;
 }) {
+  const kpis = buildKpis(detections, alerts);
   if (role === "operator") {
     return (
       <div className="space-y-5">
         <div className="grid grid-cols-5 gap-2 xl:gap-3">
-          {operatorKpis.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} large />)}
+          {kpis.operator.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} large />)}
         </div>
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_0.9fr]">
           <ImageInspectionPanel detections={detections} onInspection={onInspection} />
@@ -222,10 +271,10 @@ function RoleDashboard({
   if (role === "supervisor") {
     return (
       <div className="space-y-5">
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{supervisorKpis.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}</div>
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{kpis.supervisor.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}</div>
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <TrendPanel title="Defect Trends" metric="defects" />
-          <LineComparison />
+          <TrendPanel title="Defect Trends" metric="defects" detections={detections} />
+          <LineComparison detections={detections} />
         </div>
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
           <DefectTable detections={detections} onReview={onReview} />
@@ -237,13 +286,13 @@ function RoleDashboard({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{executiveKpis.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}</div>
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{kpis.executive.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}</div>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <TrendPanel title="Defect Reduction" metric="defects" />
-        <TrendPanel title="Production Efficiency" metric="throughput" />
-        <ExecutiveImpact />
+        <TrendPanel title="Defect Reduction" metric="defects" detections={detections} />
+        <TrendPanel title="Production Efficiency" metric="throughput" detections={detections} />
+        <ExecutiveImpact detections={detections} />
       </div>
-      <MachineGrid executive />
+      <MachineGrid executive machines={[]} />
     </div>
   );
 }
@@ -537,13 +586,14 @@ function AlertRail({ alerts }: { alerts: ReturnType<typeof useLiveFabriGuard>["a
   );
 }
 
-function TrendPanel({ title, metric }: { title: string; metric: keyof typeof trends[number] }) {
+function TrendPanel({ title, metric, detections }: { title: string; metric: keyof TrendPoint; detections: DefectDetection[] }) {
+  const trendData = buildTrends(detections);
   return (
     <section className="industrial-panel rounded-md p-4">
       <SectionTitle eyebrow="Analytics" title={title} />
       <div className="h-64">
         <ResponsiveContainer>
-          <AreaChart data={trends}>
+          <AreaChart data={trendData}>
             <CartesianGrid stroke="#1f2937" vertical={false} />
             <XAxis dataKey="time" stroke="#64748b" fontSize={12} />
             <YAxis stroke="#64748b" fontSize={12} />
@@ -556,13 +606,21 @@ function TrendPanel({ title, metric }: { title: string; metric: keyof typeof tre
   );
 }
 
-function LineComparison() {
+function LineComparison({ detections }: { detections: DefectDetection[] }) {
+  const rows = Object.values(
+    detections.reduce<Record<string, { line: string; defects: number }>>((acc, detection) => {
+      const line = detection.line || "Line";
+      acc[line] ??= { line, defects: 0 };
+      acc[line].defects += detection.status !== "approved" ? 1 : 0;
+      return acc;
+    }, {}),
+  );
   return (
     <section className="industrial-panel rounded-md p-4">
       <SectionTitle eyebrow="Shift Operations" title="Line Comparison" />
       <div className="h-64">
         <ResponsiveContainer>
-          <BarChart data={[{ line: "A1", defects: 8 }, { line: "A2", defects: 19 }, { line: "B1", defects: 12 }, { line: "C3", defects: 6 }]}>
+          <BarChart data={rows}>
             <CartesianGrid stroke="#1f2937" vertical={false} />
             <XAxis dataKey="line" stroke="#64748b" />
             <YAxis stroke="#64748b" />
@@ -575,26 +633,28 @@ function LineComparison() {
   );
 }
 
-function ProductionAnalytics() {
+function ProductionAnalytics({ detections, alerts }: { detections: DefectDetection[]; alerts: ReturnType<typeof useLiveFabriGuard>["alerts"] }) {
+  const kpis = buildKpis(detections, alerts);
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{supervisorKpis.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}</div>
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{kpis.supervisor.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}</div>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <TrendPanel title="Throughput vs Defects" metric="throughput" />
-        <LineComparison />
+        <TrendPanel title="Throughput vs Defects" metric="throughput" detections={detections} />
+        <LineComparison detections={detections} />
       </div>
-      <MachineGrid />
+      <MachineGrid machines={[]} />
     </div>
   );
 }
 
 function SensorMonitoring() {
+  const sensors: SensorReading[] = [];
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {sensors.map((sensor) => <SensorWidget key={sensor.id} sensor={sensor} />)}
       </div>
-      <TrendPanel title="Anomaly Trend" metric="anomaly" />
+      <TrendPanel title="Anomaly Trend" metric="anomaly" detections={[]} />
     </div>
   );
 }
@@ -619,11 +679,11 @@ function SensorWidget({ sensor }: { sensor: SensorReading }) {
   );
 }
 
-function MachineHealth() {
-  return <MachineGrid />;
+function MachineHealth({ machines }: { machines: MachineHealthType[] }) {
+  return <MachineGrid machines={machines} />;
 }
 
-function MachineGrid({ executive = false }: { executive?: boolean }) {
+function MachineGrid({ executive = false, machines }: { executive?: boolean; machines: MachineHealthType[] }) {
   return (
     <section className="industrial-panel rounded-md p-4">
       <SectionTitle eyebrow={executive ? "Plant Overview" : "Machine Health"} title="Industrial Cell Status" />
@@ -655,8 +715,8 @@ function OperatorAnalytics({ detections, onReview }: { detections: DefectDetecti
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <TrendPanel title="Correction Statistics" metric="confidence" />
-        <ExecutiveImpact />
+        <TrendPanel title="Correction Statistics" metric="confidence" detections={detections} />
+        <ExecutiveImpact detections={detections} />
         <section className="industrial-panel rounded-md p-4">
           <SectionTitle eyebrow="Human Loop" title="Operator Queue" />
           <div className="space-y-3 text-sm">
@@ -776,13 +836,14 @@ function DefectHeatmap() {
   );
 }
 
-function ExecutiveImpact() {
+function ExecutiveImpact({ detections }: { detections: DefectDetection[] }) {
+  const trendData = buildTrends(detections);
   return (
     <section className="industrial-panel rounded-md p-4">
       <SectionTitle eyebrow="Business Impact" title="Financial Quality Impact" />
       <div className="h-64">
         <ResponsiveContainer>
-          <LineChart data={trends}>
+          <LineChart data={trendData}>
             <CartesianGrid stroke="#1f2937" vertical={false} />
             <XAxis dataKey="time" stroke="#64748b" />
             <YAxis stroke="#64748b" />

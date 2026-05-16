@@ -1,4 +1,3 @@
-import { alerts, detections, machines, sensors, trends } from "@/lib/mock-data";
 import type { AlertEvent, DefectDetection, Severity } from "@/types/fabriguard";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -8,9 +7,12 @@ const severityMap: Record<string, Severity> = {
   MONITOR: "advisory",
   REVIEW: "warning",
   ALERT: "warning",
+  WARNING: "warning",
   ISOLATE: "critical",
+  CRITICAL: "critical",
   STOP: "critical",
   REJECT: "critical",
+  EMERGENCY: "critical",
 };
 
 function boundedPercent(value: unknown, fallback: number) {
@@ -106,8 +108,7 @@ export function normalizeAlert(payload: any): AlertEvent {
   };
 }
 
-async function getJson<T>(path: string, fallback: T, useMock: boolean): Promise<T> {
-  if (useMock) return fallback;
+async function getJson<T>(path: string, fallback: T): Promise<T> {
   try {
     const response = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
     if (!response.ok) return fallback;
@@ -119,20 +120,19 @@ async function getJson<T>(path: string, fallback: T, useMock: boolean): Promise<
 
 export const fabriGuardApi = {
   detections: async (useMock: boolean) => {
-    const rows = await getJson<any[]>("/inspections/recent?count=30", detections, useMock);
+    const rows = useMock ? [] : await getJson<any[]>("/inspections/recent?count=30", []);
     return rows.map(normalizeDetection);
   },
   alerts: async (useMock: boolean) => {
-    const rows = await getJson<any[]>("/alerts/recent?count=20", alerts, useMock);
+    const rows = useMock ? [] : await getJson<any[]>("/alerts/recent?count=20", []);
     return rows.map(normalizeAlert);
   },
-  sensors: (useMock: boolean) => getJson("/machines/status", sensors, useMock),
-  machines: (useMock: boolean) => getJson("/machines/status", machines, useMock),
+  sensors: (useMock: boolean) => useMock ? Promise.resolve([]) : getJson("/machines/status", []),
+  machines: (useMock: boolean) => useMock ? Promise.resolve([]) : getJson("/machines/status", []),
   modelStatus: (useMock: boolean) =>
-    getJson(
+    useMock ? Promise.resolve({ primary_model: "roboflow_workflow", weights_available: false, fallback: "hosted_inference", loaded: false }) : getJson(
       "/model/status",
-      { primary_model: "yolov8", weights_available: false, fallback: "mock_detector", loaded: false },
-      useMock,
+      { primary_model: "roboflow_workflow", weights_available: false, fallback: "hosted_inference", loaded: false },
     ),
   inspectImage: async (file: File) => {
     const formData = new FormData();
@@ -146,5 +146,5 @@ export const fabriGuardApi = {
     }
     return response.json();
   },
-  trends: async () => trends,
+  trends: async () => [],
 };

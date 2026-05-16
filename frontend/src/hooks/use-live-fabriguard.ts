@@ -9,11 +9,6 @@ import {
   normalizeDetection,
 } from "@/lib/api";
 
-import {
-  alerts as mockAlerts,
-  detections as mockDetections,
-} from "@/lib/mock-data";
-
 import type {
   AlertEvent,
   DefectDetection,
@@ -25,8 +20,8 @@ const WS_URL =
 
 export function useLiveFabriGuard(useMock: boolean) {
   const [socketState, setSocketState] = useState<
-    "mock" | "connecting" | "live" | "offline"
-  >(useMock ? "mock" : "connecting");
+    "connecting" | "live" | "offline"
+  >("connecting");
 
   const [liveDetections, setLiveDetections] = useState<
     DefectDetection[]
@@ -71,11 +66,6 @@ export function useLiveFabriGuard(useMock: boolean) {
   // -----------------------------------------
 
   useEffect(() => {
-    if (useMock) {
-      setSocketState("mock");
-      return;
-    }
-
     let ws: WebSocket;
     let shouldReconnect = true;
 
@@ -194,7 +184,7 @@ export function useLiveFabriGuard(useMock: boolean) {
         ws.close();
       }
     };
-  }, [useMock]);
+  }, []);
 
   // -----------------------------------------
   // Final Combined Data
@@ -206,13 +196,12 @@ export function useLiveFabriGuard(useMock: boolean) {
 
       detections: [
         ...liveDetections,
-        ...(detectionsQuery.data ??
-          mockDetections),
+        ...(detectionsQuery.data ?? []),
       ],
 
       alerts: [
         ...liveAlerts,
-        ...(alertsQuery.data ?? mockAlerts),
+        ...(alertsQuery.data ?? []),
       ],
 
       isLoading:
