@@ -1,522 +1,57 @@
-import sys, os
-sys.path.append(os.path.dirname(
-    os.path.dirname(os.path.dirname(__file__))
-))
-from ai_core.inference.isolation_forest_detector import detector
-from ai_core.inference.patchcore_detector import patchcore
-from ai_core.inference.yolo_detector import model_status, reload_model
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
+from __future__ import annotations
+
+import os
+import sys
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-import json, uuid, importlib
-from datetime import datetime
 
-from backend.services.inspection_pipeline  import run_inspection_flow
-from backend.services.database_service     import (
-    get_todays_stats
-)
-from backend.services.notification_service import (
-    get_recent_alerts, get_dashboard_stats
-)
-from backend.database.connection           import (
-    create_tables, SessionLocal
-)
-from backend.database.models               import (
-    Inspection
-)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-def _get_alert_model():
-    try:
-        from backend.database.models import Alert
-    except ImportError:
-        return importlib.import_module(
-            "backend.database.models.alert"
-        ).Alert
-    return Alert
-
-Alert = _get_alert_model()
-
-METRICS_PATH = "ai_core/models/fabriguard_v1/metrics_report.json"
-# ── APP SETUP ────────────────────────────────────────
-app = FastAPI(
-    title="FabriGuard API",
-    description="AI-Powered Knitwear Defect Detection",
-    version="1.0.0"
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# ── WEBSOCKET MANAGER ────────────────────────────────
-class ConnectionManager:
-    def __init__(self):
-        self.active: list[WebSocket] = []
-
-    async def connect(self, ws: WebSocket):
-        await ws.accept()
-        self.active.append(ws)
-        print(f"Dashboard connected. Total: {len(self.active)}")
-
-    def disconnect(self, ws: WebSocket):
-        if ws in self.active:
-            self.active.remove(ws)
-        print(f"Dashboard disconnected. Total: {len(self.active)}")
-
-    async def broadcast(self, data: dict):
-        dead = []
-        for ws in self.active:
-            try:
-                await ws.send_json(data)
-            except Exception:
-                dead.append(ws)
-        for ws in dead:
-            if ws in self.active:
-                self.active.remove(ws)
-
-manager = ConnectionManager()
-
-# ── STARTUP ──────────────────────────────────────────
-@app.on_event("startup")
-async def startup():
-    create_tables()
-    print("FabriGuard API started")
-    print("Docs: http://localhost:8000/docs")
-
-# ── HEALTH CHECK ─────────────────────────────────────
-@app.get("/")
-async def root():
-    return {
-        "system":  "FabriGuard",
-        "status":  "running",
-        "version": "1.0.0"
-    }
-
-@app.get("/health")
-async def health():
-    return {
-        "status":    "ok",
-        "timestamp": datetime.now().isoformat()
-    }
-
-# ── CORE INSPECTION ENDPOINT ─────────────────────────
-@app.post("/inspect")
-async def inspect(file: UploadFile = File(None)):
-    """
-    Main inspection endpoint.
-    Accepts an image file (optional — mock ignores it).
-    Runs full pipeline: detect → severity → root cause
-    → save → alert → broadcast to dashboard.
-    """
-    image_path = None
-
-    if file:
-        os.makedirs("uploads", exist_ok=True)
-        image_path = f"uploads/{uuid.uuid4()}_{file.filename}"
-        with open(image_path, "wb") as f:
-            f.write(await file.read())
-
-    return await run_inspection_flow(image_path, broadcast=manager.broadcast)
+from backend.api.routes.health import router as health_router
+from backend.api.routes.inspect import router as inspect_router
+from backend.api.routes.monitoring import router as monitoring_router
+from backend.api.websocket.routes import router as websocket_router
+from backend.database.connection import create_tables
 
 
-@app.post("/inspect-image")
-async def inspect_image(file: UploadFile = File(...)):
-    """
-    Production image-upload inspection endpoint.
-    Upload image -> hosted Roboflow inference -> severity/root cause -> DB
-    persistence -> websocket broadcast -> structured API response.
-    """
-    os.makedirs("uploads/inspect", exist_ok=True)
-    safe_name = file.filename.replace(" ", "_")
-    image_path = f"uploads/inspect/{uuid.uuid4()}_{safe_name}"
-    try:
-        with open(image_path, "wb") as f:
-            f.write(await file.read())
-        return await run_inspection_flow(image_path, broadcast=manager.broadcast)
-    except Exception as exc:
-        return JSONResponse(
-            status_code=500,
-            content={
-                "status": "ERROR",
-                "message": "Inspection failed safely",
-                "detail": str(exc),
-                "timestamp": datetime.now().isoformat(),
-            },
-        )
-    finally:
-        try:
-            if os.path.exists(image_path):
-                os.remove(image_path)
-        except OSError:
-            pass
-
-@app.post("/inspect/frame")
-async def inspect_frame(file: UploadFile = File(...)):
-    """
-    Single-frame camera/image inference endpoint.
-    Uses the same hosted Roboflow + PatchCore + Isolation Forest pipeline.
-    """
-    os.makedirs("uploads/frame", exist_ok=True)
-    safe_name = file.filename.replace(" ", "_")
-    image_path = f"uploads/frame/{uuid.uuid4()}_{safe_name}"
-    with open(image_path, "wb") as f:
-        f.write(await file.read())
-
-    return await run_inspection_flow(image_path, broadcast=manager.broadcast)
-
-# ── WEBCAM INSPECTION ─────────────────────────────────
-@app.post("/inspect/webcam")
-async def inspect_webcam(image_data: str = None):
-    """
-    Receives base64 image from browser webcam.
-    Processes and returns defect detection.
-    """
-    if not image_data:
-        return {"error": "No image data"}
-
-    try:
-        import base64
-        import io
-        from PIL import Image
-
-        img_bytes = base64.b64decode(
-            image_data.split(',')[1]
-        )
-        img = Image.open(io.BytesIO(img_bytes))
-
-        os.makedirs("uploads/webcam", exist_ok=True)
-        temp_path = f"uploads/webcam/{uuid.uuid4()}.jpg"
-        img.save(temp_path)
-
-        return await run_inspection_flow(temp_path, broadcast=manager.broadcast)
-
-    except Exception as e:
-        return {"error": str(e)}
-
-# ── DASHBOARD STATS ───────────────────────────────────
-@app.get("/dashboard/stats")
-async def dashboard_stats():
-    """Returns today's live stats for supervisor dashboard."""
-    return get_todays_stats()
-
-# ── RECENT ALERTS ─────────────────────────────────────
-@app.get("/export/csv")
-async def export_csv():
-    """
-    Download the full defect log as CSV.
-    Opens directly in Excel.
-    """
-    csv_path = "logs/defect_log.csv"
-    if not os.path.exists(csv_path):
-        return JSONResponse(
-            status_code=404,
-            content={"error": "No log file yet. Run inspections first."},
-        )
-    return FileResponse(
-        path=csv_path,
-        filename=f"fabriguard_defect_log_{datetime.now().strftime('%Y%m%d')}.csv",
-        media_type="text/csv",
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="Industrial AI Inspection API",
+        description="Real-time Industry 4.0 defect detection and monitoring.",
+        version="1.0.0",
     )
 
-
-@app.get("/alerts/recent")
-async def recent_alerts(count: int = 10):
-    """Returns last N alerts from Redis."""
-    return get_recent_alerts(count)
-
-# ── RECENT INSPECTIONS ────────────────────────────────
-@app.get("/inspections/recent")
-async def recent_inspections(count: int = 20):
-    """Returns last N inspection records from PostgreSQL."""
-    db = SessionLocal()
-    try:
-        records = db.query(Inspection)\
-                    .order_by(Inspection.id.desc())\
-                    .limit(count).all()
-        return [{
-            "inspection_id":  r.inspection_id,
-            "timestamp":      r.timestamp.isoformat()
-                              if r.timestamp else None,
-            "machine_id":     r.machine_id,
-            "status":         r.status,
-            "defect_class":   r.defect_class,
-            "defects":        [{
-                "class": r.defect_class,
-                "confidence": r.confidence,
-                "bbox": r.bbox,
-            }] if r.defect_class else [],
-            "confidence":     r.confidence,
-            "bbox":           r.bbox,
-            "severity_level": r.severity_level,
-            "severity_name":  r.severity_name,
-            "root_cause":     r.root_cause,
-            "action":         r.action,
-            "inference_ms":   r.inference_ms,
-            "overridden":     r.overridden,
-        } for r in records]
-    finally:
-        db.close()
-
-# ── INSPECTOR OVERRIDE ────────────────────────────────
-@app.post("/inspect/{inspection_id}/override")
-async def override_inspection(
-    inspection_id: str,
-    override_note: str = "Inspector override"
-):
-    """
-    Inspector disagrees with AI decision.
-    Marks record as overridden — feeds back to model later.
-    """
-    db = SessionLocal()
-    try:
-        record = db.query(Inspection).filter(
-            Inspection.inspection_id == inspection_id
-        ).first()
-
-        if not record:
-            return JSONResponse(
-                status_code=404,
-                content={"error": "Inspection not found"}
-            )
-
-        record.overridden    = True
-        record.override_note = override_note
-        db.commit()
-
-        await manager.broadcast({
-            "type":          "override",
-            "inspection_id": inspection_id,
-            "note":          override_note,
-        })
-
-        return {
-            "status":        "overridden",
-            "inspection_id": inspection_id,
-            "note":          override_note
-        }
-    finally:
-        db.close()
-
-# ── ACKNOWLEDGE ALERT ─────────────────────────────────
-@app.post("/alerts/{alert_id}/acknowledge")
-async def acknowledge_alert(alert_id: int):
-    """Supervisor acknowledges alert — removes from active count."""
-    db = SessionLocal()
-    try:
-        alert = db.query(Alert).filter(
-            Alert.id == alert_id
-        ).first()
-        if not alert:
-            return JSONResponse(
-                status_code=404,
-                content={"error": "Alert not found"}
-            )
-        alert.acknowledged = True
-        db.commit()
-        return {
-            "status":   "acknowledged",
-            "alert_id": alert_id
-        }
-    finally:
-        db.close()
-
-# ── MACHINE STATUS ────────────────────────────────────
-@app.get("/machines/status")
-async def machine_status():
-    """Returns current simulated machine sensor states."""
-    from backend.services.root_cause_engine import MOCK_MACHINE_STATE
-    machines = []
-    for machine_id, state in MOCK_MACHINE_STATE.items():
-        health = "ok"
-        if state["tool_age_days"] > 7:  health = "critical"
-        elif state["vibration"] > 1.5:  health = "warning"
-        elif state["tension_kn"] > 4.5: health = "warning"
-        machines.append({
-            "machine_id":    machine_id,
-            "health":        health,
-            "tool_age_days": state["tool_age_days"],
-            "vibration":     state["vibration"],
-            "tension_kn":    state["tension_kn"],
-            "temperature_c": state["temperature_c"],
-        })
-    return machines
-
-# ── ISOLATION FOREST — ANOMALY SCAN ──────────────────
-@app.get("/machines/anomaly-scan")
-async def anomaly_scan():
-    """
-    Scans all machines using Isolation Forest.
-    Returns anomaly assessment for each machine.
-    Fires predictive warning before defects appear.
-    """
-    try:
-        from backend.services.root_cause_engine import (
-            MOCK_MACHINE_STATE
-        )
-        results = detector.scan_all_machines(
-            MOCK_MACHINE_STATE
-        )
-
-        for r in results:
-            if r["severity"] in ["critical", "warning"]:
-                await manager.broadcast({
-                    "type":           "sensor_anomaly",
-                    "machine_id":     r["machine_id"],
-                    "severity":       r["severity"],
-                    "violations":     r["violations"],
-                    "recommendation": r["recommendation"],
-                    "predict_defect": r["predict_defect"],
-                    "timestamp":      r["timestamp"],
-                })
-
-        return json.loads(json.dumps(results, default=str))
-
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.get("/model/status")
-async def get_model_status():
-    status = model_status()
-    status["patchcore"] = patchcore.get_status()
-    status["isolation_forest"] = {
-        "model": "isolation_forest",
-        "path": str(detector.model_path),
-        "loaded": detector.model is not None,
-    }
-    return status
-
-@app.get("/model/metrics")
-async def get_model_metrics():
-    if not os.path.exists(METRICS_PATH):
-        return {
-            "available": False,
-            "path": METRICS_PATH,
-            "message": "Train YOLOv5n first to generate metrics_report.json",
-        }
-    with open(METRICS_PATH, "r", encoding="utf-8") as f:
-        metrics = json.load(f)
-    metrics["available"] = True
-    return metrics
-
-@app.post("/model/reload")
-async def post_model_reload():
-    return reload_model()
-
-# ── PATCHCORE — PRODUCT SETUP ─────────────────────────
-@app.post("/patchcore/setup")
-async def patchcore_setup(
-    product_name: str,
-    files: list[UploadFile] = File(...)
-):
-    """
-    Engineer uploads good product photos.
-    PatchCore builds memory bank instantly.
-    New product ready in minutes — zero training needed.
-    """
-    os.makedirs("uploads/reference", exist_ok=True)
-    saved_paths = []
-
-    for file in files:
-        safe_name = file.filename.replace(" ", "_")
-        path = f"uploads/reference/{product_name}_{safe_name}"
-        with open(path, "wb") as f:
-            f.write(await file.read())
-        saved_paths.append(path)
-
-    result = patchcore.setup_product(
-        product_name, saved_paths
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
-    await manager.broadcast({
-        "type":         "product_onboarded",
-        "product_name": product_name,
-        "images_used":  result.get("images_used", 0),
-        "status":       result.get("status", "ready"),
-        "timestamp":    datetime.now().isoformat(),
-    })
+    app.include_router(health_router)
+    app.include_router(inspect_router)
+    app.include_router(monitoring_router)
+    app.include_router(websocket_router)
 
-    return result
+    @app.on_event("startup")
+    async def startup():
+        create_tables()
+        print("Industrial AI Inspection API started")
+        print("Docs: http://localhost:8000/docs")
 
-# ── PATCHCORE — STATUS ────────────────────────────────
-@app.get("/patchcore/status")
-async def patchcore_status():
-    """Returns current PatchCore product profile status."""
-    return patchcore.get_status()
+    return app
 
-# ── PATCHCORE — INSPECT ───────────────────────────────
-@app.post("/patchcore/inspect")
-async def patchcore_inspect(
-    file: UploadFile = File(...)
-):
-    """
-    Inspect image using PatchCore memory bank.
-    No training needed — zero-shot for new products.
-    """
-    os.makedirs("uploads/inspect", exist_ok=True)
-    safe_name = file.filename.replace(" ", "_")
-    path      = f"uploads/inspect/{uuid.uuid4()}_{safe_name}"
 
-    with open(path, "wb") as f:
-        f.write(await file.read())
+app = create_app()
 
-    from backend.services.severity_engine import SeverityEngine
-    sev_engine = SeverityEngine()
 
-    detection = patchcore.inspect(path)
-    severity  = sev_engine.classify(detection)
-
-    await manager.broadcast({
-        "type":           "inspection",
-        "inspection_id":  str(uuid.uuid4())[:8],
-        "timestamp":      datetime.now().isoformat(),
-        "machine_id":     "PATCHCORE",
-        "status":         detection["status"],
-        "severity":       severity["name"],
-        "severity_level": severity["level"],
-        "defect":         "anomaly"
-                          if detection["status"] == "FAIL"
-                          else None,
-        "confidence":     detection["defects"][0]["confidence"]
-                          if detection["defects"] else None,
-        "action":         severity["action"],
-        "source":         "patchcore",
-    })
-
-    return {
-        "detection": detection,
-        "severity":  severity,
-        "source":    "patchcore",
-        "product":   patchcore.product_name,
-    }
-
-# ── WEBSOCKET ENDPOINT ────────────────────────────────
-@app.websocket("/ws/dashboard")
-async def websocket_dashboard(ws: WebSocket):
-    """
-    Dashboard connects here for live updates.
-    Receives every inspection and alert in real time.
-    """
-    await manager.connect(ws)
-    try:
-        stats = get_todays_stats()
-        await ws.send_json({
-            "type":  "stats",
-            "stats": stats
-        })
-        while True:
-            await ws.receive_text()
-    except WebSocketDisconnect:
-        manager.disconnect(ws)
-
-# ── RUN SERVER ────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "backend.api.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=True,
     )

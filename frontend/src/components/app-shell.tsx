@@ -41,7 +41,15 @@ import { useLiveFabriGuard } from "@/hooks/use-live-fabriguard";
 import { fabriGuardApi, normalizeDetection } from "@/lib/api";
 import { cn, formatPercent, timeAgo } from "@/lib/utils";
 import { useUiStore } from "@/stores/use-ui-store";
-import type { DefectDetection, Kpi, MachineHealth as MachineHealthType, NavItem, PageKey, Role, SensorReading, TrendPoint } from "@/types/fabriguard";
+import type { DefectDetection, Kpi, MachineHealth as MachineHealthType, NavItem, Role, SensorReading, TrendPoint } from "@/types/fabriguard";
+
+type InspectionResult = {
+  status?: string;
+  severity?: { name?: string };
+  model_source?: string;
+  processing?: { model_source?: string; latency_ms?: number };
+  inference_ms?: number;
+};
 
 const navItems: NavItem[] = [
   { key: "dashboard", label: "Main Dashboard", icon: LayoutDashboard },
@@ -178,11 +186,7 @@ export function AppShell() {
 }
 
 function RelativeTime({ timestamp }: { timestamp: string }) {
-  const [label, setLabel] = useState("--");
-
-  useEffect(() => {
-    setLabel(timeAgo(timestamp));
-  }, [timestamp]);
+  const label = useMemo(() => timeAgo(timestamp), [timestamp]);
 
   return <span suppressHydrationWarning>{label}</span>;
 }
@@ -190,18 +194,15 @@ function RelativeTime({ timestamp }: { timestamp: string }) {
 function buildKpis(detections: DefectDetection[], alerts: ReturnType<typeof useLiveFabriGuard>["alerts"]) {
   const total = detections.length;
   const defects = detections.filter((item) => item.status !== "approved").length;
-  const avgConfidence = total
-    ? detections.reduce((sum, item) => sum + item.confidence, 0) / total
-    : 0;
   const critical = detections.filter((item) => item.severity === "critical").length;
   const defectRate = total ? defects / total : 0;
 
   const operator: Kpi[] = [
     { label: "Current Defects", value: String(defects), trend: `${alerts.length} active alerts`, severity: defects ? "warning" : "normal", helper: "Live backend inspections only" },
-    { label: "AI Status", value: "LIVE", trend: "Roboflow hosted workflow", severity: "normal", helper: "No frontend mock detections" },
+    { label: "AI Status", value: "LIVE", trend: "YOLOv8 inference", severity: "normal", helper: "No frontend mock detections" },
     { label: "Inspected", value: String(total), trend: "database records", severity: "advisory", helper: "Loaded from backend" },
     { label: "Critical", value: String(critical), trend: "needs action", severity: critical ? "critical" : "normal", helper: "Severity engine output" },
-    { label: "Confidence", value: formatPercent(avgConfidence), trend: "average", severity: "advisory", helper: "Model confidence" },
+    { label: "Latency", value: `${Math.round(detections.reduce((sum, item) => sum + item.inferenceMs, 0) / Math.max(total, 1))} ms`, trend: "average", severity: "advisory", helper: "Inference response time" },
   ];
 
   const supervisor: Kpi[] = [
@@ -323,19 +324,15 @@ function ImageInspectionPanel({
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [result, setResult] = useState<any | null>(null);
+  const [result, setResult] = useState<InspectionResult | null>(null);
   const [isInspecting, setIsInspecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!file) {
-      setPreviewUrl(null);
-      return;
-    }
-    const nextUrl = URL.createObjectURL(file);
-    setPreviewUrl(nextUrl);
-    return () => URL.revokeObjectURL(nextUrl);
-  }, [file]);
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
   const inspect = async () => {
     if (!file) return;
@@ -343,7 +340,7 @@ function ImageInspectionPanel({
     setError(null);
     try {
       const response = await fabriGuardApi.inspectImage(file);
-      setResult(response);
+      setResult(response as InspectionResult);
       onInspection(normalizeDetection(response));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Inspection failed");
@@ -358,19 +355,22 @@ function ImageInspectionPanel({
     <section className="industrial-panel rounded-md p-4">
       <SectionTitle
         eyebrow="Image Inspection"
-        title="Upload Fabric Image / AI Defect Analysis"
+        title="Upload Inspection Image / AI Defect Analysis"
         right={<StatusPill severity={result?.status === "FAIL" ? "warning" : "normal"} label={isInspecting ? "processing" : "ready"} />}
       />
       <div className="mb-3 grid gap-3 xl:grid-cols-[1fr_auto]">
         <label className="flex cursor-pointer items-center gap-3 rounded-md border border-dashed border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-300 hover:border-sky-500">
           <ImagePlus className="h-4 w-4 text-sky-300" />
-          <span className="truncate">{file ? file.name : "Choose image for full detector pipeline"}</span>
+          <span className="truncate">{file ? file.name : "Choose image for YOLOv8 inspection pipeline"}</span>
           <input
             type="file"
             accept="image/*"
             className="hidden"
             onChange={(event) => {
-              setFile(event.target.files?.[0] ?? null);
+              const nextFile = event.target.files?.[0] ?? null;
+              if (previewUrl) URL.revokeObjectURL(previewUrl);
+              setFile(nextFile);
+              setPreviewUrl(nextFile ? URL.createObjectURL(nextFile) : null);
               setResult(null);
               setError(null);
             }}
@@ -389,9 +389,9 @@ function ImageInspectionPanel({
       <LiveCamera detections={latest ? [latest] : detections} detailed={detailed} imageUrl={previewUrl ?? undefined} />
       {result ? (
         <div className="mt-3 grid gap-3 text-sm xl:grid-cols-4">
-          <ResultMetric label="Status" value={result.status ?? "-"} />
-          <ResultMetric label="Severity" value={result.severity?.name ?? "-"} />
-          <ResultMetric label="Detector" value={result.model_source ?? result.processing?.model_source ?? "-"} />
+          <ResultMetric label="Status" value={String(result.status ?? "-")} />
+          <ResultMetric label="Severity" value={String(result.severity?.name ?? "-")} />
+          <ResultMetric label="Detector" value={String(result.model_source ?? result.processing?.model_source ?? "-")} />
           <ResultMetric label="Latency" value={`${result.inference_ms ?? result.processing?.latency_ms ?? 0} ms`} />
         </div>
       ) : null}
@@ -430,10 +430,7 @@ function LiveCamera({ detections, detailed = false, imageUrl }: { detections: De
     : { left: `${bbox.x}%`, top: `${bbox.y}%`, width: `${bbox.width}%`, height: `${bbox.height}%` };
 
   useEffect(() => {
-    if (!imageUrl) {
-      setImageFrame({ left: 0, top: 0, width: 100, height: 100 });
-      return;
-    }
+    if (!imageUrl) return;
 
     const updateFrame = () => {
       const container = containerRef.current;
@@ -461,10 +458,13 @@ function LiveCamera({ detections, detailed = false, imageUrl }: { detections: De
       });
     };
 
-    updateFrame();
+    const frame = requestAnimationFrame(updateFrame);
     const observer = new ResizeObserver(updateFrame);
     if (containerRef.current) observer.observe(containerRef.current);
-    return () => observer.disconnect();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, [imageUrl]);
 
   return (
@@ -472,7 +472,7 @@ function LiveCamera({ detections, detailed = false, imageUrl }: { detections: De
       <div ref={containerRef} className={cn("relative overflow-hidden rounded-md border border-slate-700 bg-slate-950 grid-bg", detailed ? "h-[470px]" : "h-[390px]")}>
         <div className="absolute inset-y-0 w-1/3 scanline" />
         {imageUrl ? (
-          <img ref={imageRef} src={imageUrl} alt="Uploaded fabric inspection preview" className="absolute inset-0 h-full w-full object-contain" onLoad={() => {
+          <img ref={imageRef} src={imageUrl} alt="Uploaded inspection preview" className="absolute inset-0 h-full w-full object-contain" onLoad={() => {
             const image = imageRef.current;
             if (!image) return;
             const container = containerRef.current;
@@ -508,7 +508,7 @@ function LiveCamera({ detections, detailed = false, imageUrl }: { detections: De
         <div className="absolute bottom-3 left-3 grid grid-cols-3 gap-2 text-xs">
           <span className="rounded bg-slate-950/90 px-2 py-1 text-slate-300">UPLOAD</span>
           <span className="rounded bg-slate-950/90 px-2 py-1 text-slate-300">{active ? formatPercent(active.confidence) : "--"}</span>
-          <span className="rounded bg-slate-950/90 px-2 py-1 text-slate-300">Roboflow</span>
+          <span className="rounded bg-slate-950/90 px-2 py-1 text-slate-300">YOLOv8</span>
         </div>
       </div>
     </div>

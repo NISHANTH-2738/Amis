@@ -6,9 +6,8 @@ from typing import Awaitable, Callable
 
 from PIL import Image
 
-from ai_core.inference.isolation_forest_detector import detector as isolation_forest
 from backend.services.database_service import save_alert, save_inspection
-from backend.services.hybrid_detector import hybrid_detect
+from backend.detector.inference import inspect_image as yolo_inspect_image
 from backend.services.notification_service import publish_alert, publish_inspection
 from backend.services.root_cause_engine import MOCK_MACHINE_STATE, RootCauseEngine
 from backend.services.severity_engine import SeverityEngine
@@ -50,43 +49,44 @@ def _prediction_from_detection(detection):
     }
 
 
+def _check_machine_anomaly(machine_id: str, sensor_state: dict) -> dict:
+    try:
+        from ai_core.inference.isolation_forest_detector import detector as isolation_forest
+
+        return isolation_forest.check_machine(machine_id, sensor_state)
+    except Exception:
+        return {
+            "score": 0.0,
+            "is_anomaly": False,
+            "model": "isolation_forest_unavailable",
+            "violations": [],
+        }
+
+
 def build_websocket_events(result: dict) -> list[dict]:
     defect = result["defects"][0] if result.get("defects") else None
     events = [
         {
             "type": "inspection",
-            "inspection_id": result["inspection_id"],
-            "timestamp": result["timestamp"],
-            "machine_id": result["machine_id"],
-            "status": result["status"],
-            "defects": result.get("defects", []),
-            "severity": result["severity"]["name"],
-            "severity_level": result["severity"]["level"],
-            "prediction": result.get("prediction"),
-            "root_cause": result.get("root_cause"),
-            "anomaly": result.get("anomaly"),
-            "processing": result.get("processing"),
-            "image": result.get("image"),
-            "defect": defect.get("class") if defect else None,
-            "confidence": defect.get("confidence") if defect else None,
-            "bbox": defect.get("bbox") if defect else None,
-            "action": result["severity"]["action"],
+            "payload": result,
         }
     ]
     if result["severity"]["level"] >= 2:
         events.append(
             {
                 "type": "alert",
-                "level": result["severity"]["level"],
-                "level_name": result["severity"]["name"],
-                "machine_id": result["machine_id"],
-                "defect": defect.get("class") if defect else "sensor_anomaly",
-                "confidence": defect.get("confidence") if defect else result.get("anomaly", {}).get("score"),
-                "action": result["severity"]["action"],
-                "root_cause": result["root_cause"]["cause"] if result.get("root_cause") else None,
-                "fix": result["root_cause"]["action"] if result.get("root_cause") else None,
-                "inspection_id": result["inspection_id"],
-                "timestamp": result["timestamp"],
+                "payload": {
+                    "level": result["severity"]["level"],
+                    "level_name": result["severity"]["name"],
+                    "machine_id": result["machine_id"],
+                    "defect": defect.get("class") if defect else "sensor_anomaly",
+                    "confidence": defect.get("confidence") if defect else result.get("anomaly", {}).get("score"),
+                    "action": result["severity"]["action"],
+                    "root_cause": result["root_cause"]["cause"] if result.get("root_cause") else None,
+                    "fix": result["root_cause"]["action"] if result.get("root_cause") else None,
+                    "inspection_id": result["inspection_id"],
+                    "timestamp": result["timestamp"],
+                },
             }
         )
     return events
@@ -134,12 +134,12 @@ def process_frame(frame=None, machine_id: str | None = None, sensor_state: dict 
     machine_id = machine_id or DEFAULT_MACHINE_ID
     sensor_state = sensor_state or MOCK_MACHINE_STATE.get(machine_id, {})
 
-    detection = hybrid_detect(image_path)
-    anomaly = isolation_forest.check_machine(machine_id, sensor_state)
-    severity = severity_engine.classify(detection, anomaly)
+    detection = yolo_inspect_image(image_path)
+    anomaly = _check_machine_anomaly(machine_id, sensor_state)
+    severity = detection.get("severity") or severity_engine.classify(detection, anomaly)
 
     root_cause = None
-    if detection["status"] == "FAIL":
+    if detection["status"] == "FAIL" and detection.get("defects"):
         defect_class = detection["defects"][0].get("class", "unknown_anomaly")
         root_cause = root_cause_engine.analyse(defect_class, machine_id, sensor_state)
 

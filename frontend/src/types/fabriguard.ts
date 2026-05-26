@@ -37,6 +37,7 @@ export interface DefectDetection {
   product: string;
   defect: string;
   confidence: number;
+  inferenceMs: number;
   severity: Severity;
   status: "new" | "reviewing" | "approved" | "rejected";
   bbox: { x: number; y: number; width: number; height: number };

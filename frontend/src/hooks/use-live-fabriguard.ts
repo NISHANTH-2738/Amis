@@ -98,6 +98,7 @@ export function useLiveFabriGuard(useMock: boolean) {
       ws.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
+          const body = payload.payload ?? payload;
 
           // -------------------------------
           // Inspection Events
@@ -106,7 +107,7 @@ export function useLiveFabriGuard(useMock: boolean) {
           if (payload.type === "inspection") {
             setLiveDetections((current) =>
               [
-                normalizeDetection(payload),
+                normalizeDetection(body),
                 ...current,
               ].slice(0, 50),
             );
@@ -119,7 +120,7 @@ export function useLiveFabriGuard(useMock: boolean) {
           if (payload.type === "alert") {
             setLiveAlerts((current) =>
               [
-                normalizeAlert(payload),
+                normalizeAlert(body),
                 ...current,
               ].slice(0, 50),
             );
