@@ -1,4 +1,5 @@
 import os
+import csv
 import uuid
 from datetime import datetime
 from typing import Awaitable, Callable
@@ -16,6 +17,7 @@ from backend.services.severity_engine import SeverityEngine
 severity_engine = SeverityEngine()
 root_cause_engine = RootCauseEngine()
 DEFAULT_MACHINE_ID = os.getenv("FABRIGUARD_DEFAULT_MACHINE_ID", "M-05")
+CSV_LOG_PATH = "logs/defect_log.csv"
 BroadcastCallback = Callable[[dict], Awaitable[None]]
 
 
@@ -99,6 +101,11 @@ def build_event(detection, severity, root_cause, anomaly, machine_id, image_path
         "machine_id": machine_id,
         "status": detection["status"],
         "defects": detection.get("defects", []),
+        "defect_count": detection.get(
+            "defect_count",
+            len(detection.get("defects", [])),
+        ),
+        "csv_log": detection.get("csv_log", ""),
         "prediction": _prediction_from_detection(detection),
         "severity": severity,
         "root_cause": root_cause,
@@ -139,12 +146,53 @@ def process_frame(frame=None, machine_id: str | None = None, sensor_state: dict 
     return build_event(detection, severity, root_cause, anomaly, machine_id, image_path)
 
 
+def append_csv_log(result: dict):
+    """
+    Appends one row to the defect CSV log file.
+    Creates file and header if not exists.
+    """
+    os.makedirs("logs", exist_ok=True)
+    file_exists = os.path.isfile(CSV_LOG_PATH)
+
+    with open(CSV_LOG_PATH, "a", newline="") as f:
+        writer = csv.writer(f)
+
+        # Write header on first row
+        if not file_exists:
+            writer.writerow([
+                "inspection_id", "timestamp",
+                "machine_id", "status",
+                "defect_count", "defect_classes",
+                "severity", "root_cause",
+                "csv_log_raw"
+            ])
+
+        defect_classes = " | ".join([
+            d["class"] for d in result.get("defects", [])
+        ]) or "none"
+
+        writer.writerow([
+            result.get("inspection_id", ""),
+            result.get("timestamp", ""),
+            result.get("machine_id", ""),
+            result.get("status", ""),
+            result.get("defect_count", 0),
+            defect_classes,
+            result.get("severity", {}).get("name", ""),
+            result.get("root_cause", {}).get(
+                "cause", ""
+            ) if result.get("root_cause") else "",
+            result.get("csv_log", ""),
+        ])
+
+
 async def run_inspection_flow(
     image_path: str = None,
     machine_id: str | None = None,
     broadcast: BroadcastCallback | None = None,
 ) -> dict:
     result = process_frame(image_path=image_path, machine_id=machine_id)
+    append_csv_log(result)
     save_inspection(result)
     save_alert(result)
     publish_inspection(result)
@@ -158,6 +206,7 @@ async def run_inspection_flow(
 def run_inspection(image_path: str = None) -> dict:
     """Synchronous compatibility path for simulator and older endpoints."""
     result = process_frame(image_path=image_path)
+    append_csv_log(result)
     save_inspection(result)
     save_alert(result)
     publish_inspection(result)

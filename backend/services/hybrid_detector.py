@@ -95,9 +95,20 @@ def hybrid_detect(image_path: str | None = None) -> dict:
             "patchcore": {"anomaly_score": 0.0, "is_anomaly": False, "heatmap_path": None},
         }
 
-    raw_detections = detect_defects(image_path)
+    roboflow_result = detect_defects(image_path)
+    if isinstance(roboflow_result, dict):
+        raw_detections = roboflow_result.get("defects", [])
+        roboflow_status = str(roboflow_result.get("status", "")).upper()
+    else:
+        raw_detections = roboflow_result
+        roboflow_result = {}
+        roboflow_status = ""
+
     defects = _normalise_detections(raw_detections, width, height)
-    status = "FAIL" if defects else "PASS"
+    status = roboflow_status or ("FAIL" if defects else "PASS")
+    if status == "FAIL" and not defects:
+        status = "PASS"
+
     patchcore_result = {"patchcore": {"anomaly_score": 0.0, "is_anomaly": False, "heatmap_path": None}, "inference_ms": 0}
 
     # PatchCore is kept as a lightweight secondary guardrail. It only escalates
@@ -116,8 +127,10 @@ def hybrid_detect(image_path: str | None = None) -> dict:
     return {
         "status": status,
         "defects": defects,
+        "defect_count": int(roboflow_result.get("defect_count") or len(defects)),
+        "csv_log": roboflow_result.get("csv_log", ""),
         "inference_ms": int((time.perf_counter() - started) * 1000),
         "image_path": image_path,
-        "source": "hybrid_roboflow_patchcore",
+        "source": roboflow_result.get("source", "hybrid_roboflow_patchcore"),
         "patchcore": patchcore_result.get("patchcore", {}),
     }

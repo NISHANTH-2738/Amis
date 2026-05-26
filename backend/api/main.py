@@ -7,7 +7,7 @@ from ai_core.inference.patchcore_detector import patchcore
 from ai_core.inference.yolo_detector import model_status, reload_model
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 import json, uuid, importlib
 from datetime import datetime
 
@@ -203,6 +203,25 @@ async def dashboard_stats():
     return get_todays_stats()
 
 # ── RECENT ALERTS ─────────────────────────────────────
+@app.get("/export/csv")
+async def export_csv():
+    """
+    Download the full defect log as CSV.
+    Opens directly in Excel.
+    """
+    csv_path = "logs/defect_log.csv"
+    if not os.path.exists(csv_path):
+        return JSONResponse(
+            status_code=404,
+            content={"error": "No log file yet. Run inspections first."},
+        )
+    return FileResponse(
+        path=csv_path,
+        filename=f"fabriguard_defect_log_{datetime.now().strftime('%Y%m%d')}.csv",
+        media_type="text/csv",
+    )
+
+
 @app.get("/alerts/recent")
 async def recent_alerts(count: int = 10):
     """Returns last N alerts from Redis."""
